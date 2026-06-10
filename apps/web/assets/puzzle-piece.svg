@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="パズルピース">
+  <defs>
+    <linearGradient id="p" x1="14" y1="8" x2="82" y2="90">
+      <stop stop-color="#C9B8FF"/>
+      <stop offset=".52" stop-color="#9B7BFF"/>
+      <stop offset="1" stop-color="#7555DD"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#p)" d="M35 9h24a6 6 0 0 1 6 6v15h5a11 11 0 1 1 0 22h-5v29a6 6 0 0 1-6 6H39V75a10 10 0 1 0-20 0v12H15a6 6 0 0 1-6-6V57h13a10 10 0 1 0 0-20H9V15a6 6 0 0 1 6-6h10a10 10 0 1 0 20 0z"/>
+</svg>

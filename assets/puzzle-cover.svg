@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" role="img" aria-label="夕焼けのパズル画像">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="360" y2="360">
+      <stop stop-color="#FFD4E0"/>
+      <stop offset=".42" stop-color="#A28DFF"/>
+      <stop offset=".74" stop-color="#FFB36E"/>
+      <stop offset="1" stop-color="#223A55"/>
+    </linearGradient>
+  </defs>
+  <rect width="360" height="360" rx="36" fill="url(#sky)"/>
+  <circle cx="258" cy="126" r="58" fill="#FFE7A6" opacity=".72"/>
+  <path d="M0 250c60-38 118-33 176-12 58 20 119 11 184-40v162H0z" fill="#2B415F" opacity=".72"/>
+  <path d="M39 271h86m32 0h164M72 296h210" stroke="#FFE7A6" stroke-width="6" stroke-linecap="round" opacity=".6"/>
+  <path d="M120 52v72a25 25 0 1 1-16-23V66h52V52zm135 24v84a30 30 0 1 1-19-28V94h62V76z" fill="#fff0bd" opacity=".7"/>
+</svg>

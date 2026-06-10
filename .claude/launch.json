@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "MelodyLien",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["apps/web/serve.py"],
+      "port": 5174
+    }
+  ]
+}

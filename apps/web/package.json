@@ -1,0 +1,13 @@
+{
+  "name": "melodylien",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 5173",
+    "api": "go run main.go",
+    "api:build": "go build -o dist/api ./...",
+    "check": "node --check src/app.js && node --check src/data.js && node --check src/store.js && go build ./...",
+    "test:store": "node --input-type=module -e 'const memory = new Map(); globalThis.localStorage = { getItem: (key) => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value), removeItem: (key) => memory.delete(key) }; const { createStore } = await import(\"./src/store.js\"); const store = createStore(); store.dispatch({ type: \"SELECT_CANDIDATE\", index: 0 }); store.dispatch({ type: \"COMPLETE_AD\", kind: \"answer\" }); store.dispatch({ type: \"UNLOCK_TRACK\" }); const saved = JSON.parse(memory.get(\"melodylien.appState.v1\")); if (!saved.unlockedTrackIds.includes(\"track_lemon\")) throw new Error(\"unlock not persisted\"); if (!saved.collectedPieces.track_lemon.includes(1)) throw new Error(\"piece not persisted\"); if (!saved.answerReadyTrackIds.includes(\"track_lemon\")) throw new Error(\"answer readiness not persisted\"); console.log(\"store persistence ok\");'"
+  }
+}

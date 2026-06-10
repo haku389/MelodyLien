@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="YOASOBIのアーティスト画像">
+  <defs>
+    <linearGradient id="a" x1="18" y1="18" x2="148" y2="148">
+      <stop stop-color="#FFE5ED"/>
+      <stop offset=".5" stop-color="#9B7BFF"/>
+      <stop offset="1" stop-color="#2F2A45"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="80" fill="url(#a)"/>
+  <circle cx="52" cy="74" r="24" fill="#FFE2CB"/>
+  <circle cx="108" cy="74" r="24" fill="#FFE2CB"/>
+  <path d="M30 150c5-35 25-52 50-52s45 17 50 52z" fill="#F8F2FF"/>
+  <path d="M24 72c5-30 22-46 52-45 27 0 52 16 60 45-21-18-38-20-56-13-19-8-37-5-56 13z" fill="#2F2A45"/>
+  <path d="M62 86c11 9 25 9 36 0" stroke="#8A4C45" stroke-width="5" stroke-linecap="round" fill="none"/>
+</svg>
