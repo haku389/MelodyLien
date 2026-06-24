@@ -30,7 +30,22 @@ actor SupabaseClient {
     init() {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 15
+        cfg.waitsForConnectivity = true
         session = URLSession(configuration: cfg)
+    }
+
+    /// シミュレータ等で間欠的に出る HTTP/3(QUIC) の -1005「接続喪失」を吸収するため、
+    /// 接続喪失/タイムアウト時は短い待機を入れて数回リトライする。
+    private func dataWithRetry(_ req: URLRequest, attempts: Int = 4) async throws -> (Data, URLResponse) {
+        var lastError: Error = URLError(.unknown)
+        for i in 0..<attempts {
+            do { return try await session.data(for: req) }
+            catch let e as URLError where e.code == .networkConnectionLost || e.code == .timedOut || e.code == .cannotConnectToHost {
+                lastError = e
+                try? await Task.sleep(nanoseconds: UInt64(200_000_000 * (i + 1)))   // 0.2s,0.4s,0.6s...
+            }
+        }
+        throw lastError
     }
 
     // MARK: Session model
@@ -120,22 +135,37 @@ actor SupabaseClient {
             return u
         }
         // 昇格: 認可URL取得には Bearer が要る（ブラウザはヘッダ送れない）→ アプリ側で取得して URL を得る
-        guard let token = accessToken else { throw AuthError.notSignedIn }
-        var comps = URLComponents(string: baseURL + "/auth/v1/user/identities/authorize")!
-        comps.queryItems = items + [URLQueryItem(name: "skip_http_redirect", value: "true")]
-        guard let url = comps.url else { throw AuthError.notSignedIn }
-        var req = URLRequest(url: url)
-        req.setValue(anonKey, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (data, resp) = try await session.data(for: req)
-        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw OAuthError.message("認可URL取得失敗(HTTP \(http.statusCode)): \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
+        let linkItems = items + [URLQueryItem(name: "skip_http_redirect", value: "true")]
+        // 有効なセッションが無ければ匿名サインイン
+        if accessToken == nil { try? await signInAnonymously() }
+        guard let token = accessToken else { throw OAuthError.message("サインインできませんでした（通信をご確認ください）") }
+
+        var (status, data) = try await linkAuthorizeFetch(items: linkItems, token: token)
+        // 古い/無効なセッション(401/403)なら匿名サインインし直して1回だけ再試行（自己回復）
+        if status == 401 || status == 403 {
+            try? await signInAnonymously()
+            if let t2 = accessToken { (status, data) = try await linkAuthorizeFetch(items: linkItems, token: t2) }
+        }
+        guard (200..<300).contains(status) else {
+            throw OAuthError.message("認可URL取得失敗(HTTP \(status)): \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
         }
         struct LinkURL: Decodable { let url: String }
         guard let lu = try? JSONDecoder().decode(LinkURL.self, from: data), let u = URL(string: lu.url) else {
             throw OAuthError.message("認可URLの解析に失敗: \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
         }
         return u
+    }
+
+    private func linkAuthorizeFetch(items: [URLQueryItem], token: String) async throws -> (Int, Data) {
+        var comps = URLComponents(string: baseURL + "/auth/v1/user/identities/authorize")!
+        comps.queryItems = items
+        guard let url = comps.url else { throw OAuthError.message("URL不正") }
+        var req = URLRequest(url: url)
+        req.setValue(anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await dataWithRetry(req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        return (status, data)
     }
 
     enum OAuthError: LocalizedError {
@@ -171,7 +201,7 @@ actor SupabaseClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue(anonKey, forHTTPHeaderField: "apikey")
         req.httpBody = try JSONSerialization.data(withJSONObject: ["auth_code": code, "code_verifier": verifier])
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await dataWithRetry(req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             let body = String(data: data, encoding: .utf8) ?? ""
             throw OAuthError.message("交換失敗(HTTP \(http.statusCode)): \(body.prefix(160))")
@@ -199,7 +229,7 @@ actor SupabaseClient {
         var req = URLRequest(url: url)
         req.setValue(anonKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await dataWithRetry(req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw OAuthError.message("ユーザー取得失敗(HTTP \(http.statusCode)): \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
         }
@@ -263,7 +293,7 @@ actor SupabaseClient {
         req.setValue(anonKey, forHTTPHeaderField: "apikey")
         if let bearer { req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization") }
         req.httpBody = body
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await dataWithRetry(req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw AuthError.http(http.statusCode)
         }
@@ -283,7 +313,7 @@ actor SupabaseClient {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let prefer { req.setValue(prefer, forHTTPHeaderField: "Prefer") }
         req.httpBody = body
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await dataWithRetry(req)
         if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw APIError.httpError(http.statusCode)
         }
