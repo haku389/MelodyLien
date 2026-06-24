@@ -38,9 +38,11 @@ actor SupabaseClient {
     /// シミュレータ等で間欠的に出る HTTP/3(QUIC) の -1005「接続喪失」を吸収するため、
     /// 接続喪失時のみ短く2回だけリトライする（待ち時間を抑える）。
     private func dataWithRetry(_ req: URLRequest, attempts: Int = 3) async throws -> (Data, URLResponse) {
+        var r = req
+        r.assumesHTTP3Capable = false   // QUIC(HTTP/3)を前提にしない＝シミュレータの-1005を緩和
         var lastError: Error = URLError(.unknown)
         for _ in 0..<attempts {
-            do { return try await session.data(for: req) }
+            do { return try await session.data(for: r) }
             catch let e as URLError where e.code == .networkConnectionLost {
                 lastError = e
                 try? await Task.sleep(nanoseconds: 150_000_000)   // 0.15s 固定

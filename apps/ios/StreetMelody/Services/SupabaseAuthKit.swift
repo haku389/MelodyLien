@@ -48,7 +48,9 @@ enum SupabaseAuthKit {
                 _ = authSession
             }
             authSession?.presentationContextProvider = presenter
-            authSession?.prefersEphemeralWebBrowserSession = false
+            // true: iOS の「"..." を使用しようとしています」同意ダイアログを省略し、
+            // タップ後すぐにプロバイダのログイン画面へ遷移する（Cookie 非共有のエフェメラル）。
+            authSession?.prefersEphemeralWebBrowserSession = true
             authSession?.start()
         }
     }

@@ -14,7 +14,7 @@ struct AccountLinkView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var error: String?
-    @State private var busy = false
+    @State private var working: String?   // 実行中のボタン識別: "email"/"google"/"spotify"/"apple"
     @State private var currentNonce: String?
 
     var body: some View {
@@ -53,10 +53,10 @@ struct AccountLinkView: View {
                     Button {
                         submit()
                     } label: {
-                        Text(busy ? "処理中…" : (mode == .link ? "連携する" : "ログイン"))
+                        Text(working == "email" ? "処理中…" : (mode == .link ? "連携する" : "ログイン"))
                             .buttonLabel(.primary)
                     }
-                    .disabled(busy || email.isEmpty || password.count < 6)
+                    .disabled(working != nil || email.isEmpty || password.count < 6)
 
                     HStack {
                         Rectangle().fill(Color(hex: "E0D8F7")).frame(height: 1)
@@ -75,10 +75,10 @@ struct AccountLinkView: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 46)
 
-                    providerButton(title: "Google で続ける", bg: "FFFFFF", fg: "1c1c22", border: "E0D8F7") {
+                    providerButton(id: "google", title: "Google で続ける", bg: "FFFFFF", fg: "1c1c22", border: "E0D8F7") {
                         await vm.signInWithGoogle(link: mode == .link)
                     }
-                    providerButton(title: "Spotify で続ける", bg: "1DB954", fg: "FFFFFF", border: "1DB954") {
+                    providerButton(id: "spotify", title: "Spotify で続ける", bg: "1DB954", fg: "FFFFFF", border: "1DB954") {
                         await vm.signInWithSpotify(link: mode == .link)
                     }
 
@@ -99,12 +99,12 @@ struct AccountLinkView: View {
 
     private func submit() {
         error = nil
-        busy = true
+        working = "email"
         Task {
             let result = mode == .link
                 ? await vm.linkAccount(email: email, password: password)
                 : await vm.signInAccount(email: email, password: password)
-            busy = false
+            working = nil
             if let result {
                 error = result
             } else {
@@ -113,20 +113,21 @@ struct AccountLinkView: View {
         }
     }
 
-    /// Google / Spotify など OAuth プロバイダ用のボタン。
-    private func providerButton(title: String, bg: String, fg: String, border: String,
+    /// Google / Spotify など OAuth プロバイダ用のボタン。押したボタンだけローディング表示。
+    private func providerButton(id: String, title: String, bg: String, fg: String, border: String,
                                 _ action: @escaping () async -> String?) -> some View {
-        Button {
-            error = nil; busy = true
+        let loading = working == id
+        return Button {
+            error = nil; working = id
             Task {
                 let err = await action()
-                busy = false
+                working = nil
                 if let err { error = err } else { dismiss() }
             }
         } label: {
             HStack(spacing: 8) {
-                if busy { ProgressView().tint(Color(hex: fg)) }
-                Text(busy ? "接続中…" : title)
+                if loading { ProgressView().tint(Color(hex: fg)) }
+                Text(loading ? "接続中…" : title)
                     .font(.system(size: 14, weight: .black))
                     .foregroundStyle(Color(hex: fg))
             }
@@ -134,7 +135,7 @@ struct AccountLinkView: View {
             .background(Color(hex: bg), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: border)))
         }
-        .disabled(busy)
+        .disabled(working != nil)
     }
 
     private func handleApple(_ result: Result<ASAuthorization, Error>) {
@@ -148,13 +149,12 @@ struct AccountLinkView: View {
                 return
             }
             error = nil
+            working = "apple"
             let link = mode == .link
             Task {
-                if let err = await vm.signInWithApple(idToken: idToken, nonce: nonce, link: link) {
-                    error = err
-                } else {
-                    dismiss()
-                }
+                let err = await vm.signInWithApple(idToken: idToken, nonce: nonce, link: link)
+                working = nil
+                if let err { error = err } else { dismiss() }
             }
         case .failure:
             error = "Apple サインインがキャンセルされました"
