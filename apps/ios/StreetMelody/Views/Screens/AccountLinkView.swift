@@ -75,6 +75,13 @@ struct AccountLinkView: View {
                     .signInWithAppleButtonStyle(.black)
                     .frame(height: 46)
 
+                    providerButton(title: "Google で続ける", bg: "FFFFFF", fg: "1c1c22", border: "E0D8F7") {
+                        await vm.signInWithGoogle()
+                    }
+                    providerButton(title: "Spotify で続ける", bg: "1DB954", fg: "FFFFFF", border: "1DB954") {
+                        await vm.signInWithSpotify()
+                    }
+
                     Spacer(minLength: 8)
                 }
                 .padding(20)
@@ -104,6 +111,27 @@ struct AccountLinkView: View {
                 dismiss()
             }
         }
+    }
+
+    /// Google / Spotify など OAuth プロバイダ用のボタン。
+    private func providerButton(title: String, bg: String, fg: String, border: String,
+                                _ action: @escaping () async -> String?) -> some View {
+        Button {
+            error = nil; busy = true
+            Task {
+                let err = await action()
+                busy = false
+                if let err { error = err } else { dismiss() }
+            }
+        } label: {
+            Text(title)
+                .font(.system(size: 14, weight: .black))
+                .foregroundStyle(Color(hex: fg))
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(Color(hex: bg), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: border)))
+        }
+        .disabled(busy)
     }
 
     private func handleApple(_ result: Result<ASAuthorization, Error>) {

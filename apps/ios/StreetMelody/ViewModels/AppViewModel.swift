@@ -834,6 +834,22 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// OAuth（Google / Spotify）でサインインし、進行を復元。
+    func signInWithGoogle() async -> String? { await oauthSignIn(name: "Google") { try await SupabaseAuthKit.signInWithGoogle() } }
+    func signInWithSpotify() async -> String? { await oauthSignIn(name: "Spotify") { try await SupabaseAuthKit.signInWithSpotify() } }
+
+    private func oauthSignIn(name: String, _ action: () async throws -> Void) async -> String? {
+        do {
+            try await action()
+            await refreshAccountState()
+            await mergeRemoteProgress()
+            showToast("\(name) でサインインしました")
+            return nil
+        } catch {
+            return "\(name) サインインに失敗しました（キャンセル/設定未完了の可能性）"
+        }
+    }
+
     /// ログアウト（以後は匿名相当。ローカル進行は保持）。
     func signOutAccount() async {
         await SupabaseClient.shared.signOut()

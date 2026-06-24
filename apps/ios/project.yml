@@ -41,6 +41,11 @@ targets:
         NSBluetoothPeripheralUsageDescription: "あなたの推し曲情報を近くにいる人に届けるために Bluetooth を使用します。"
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # OAuth（Google/Spotify 等）のリダイレクト受け口。Supabase の Redirect URLs と一致させる。
+        CFBundleURLTypes:
+          - CFBundleURLName: com.streetmelody.app.oauth
+            CFBundleURLSchemes:
+              - com.streetmelody.app
     settings:
       base:
         SWIFT_VERSION: "5.9"
