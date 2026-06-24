@@ -18,7 +18,8 @@ final class APIService {
     #if DEBUG
     private let baseURL = "http://localhost:3001/api"
     #else
-    private let baseURL = "https://api.streetmelody.app/api"
+    // 本番: Cloud Run（asia-northeast1）。将来カスタムドメイン api.streetmelody.app をマッピングしたら差し替え可。
+    private let baseURL = "https://streetmelody-api-226967968391.asia-northeast1.run.app/api"
     #endif
 
     private let session: URLSession
