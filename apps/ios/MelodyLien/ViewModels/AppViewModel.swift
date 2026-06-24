@@ -220,6 +220,9 @@ final class AppViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
         await withTaskGroup(of: Void.self) { group in
+            // 方式A: 匿名サインインでセッション確立（per-user 読み書きの起点）。
+            // 匿名無効・通信不可なら静かに失敗し seed 運用を続ける（非破壊）。
+            group.addTask { await SupabaseClient.shared.bootstrap() }
             // カタログ（曲・サムネイルURL）のみライブAPIから取得し、seed に重ねる。
             // user / collection / mission / encounter / playlist はバックエンドの
             // per-user データ＋認証が未整備のため、当面 seed を使う（API稼働時の
