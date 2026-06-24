@@ -108,6 +108,47 @@ actor SupabaseClient {
         return data
     }
 
+    // MARK: per-user 進行（方式A Phase 2）
+
+    struct UserProgress: Sendable {
+        var pieces: [String: [Int]] = [:]   // trackId -> 所持ピース番号
+        var unlocked: Set<String> = []      // 解放済み trackId
+    }
+    private struct PieceRow: Decodable { let track_id: String; let piece_number: Int }
+    private struct TrackIdRow: Decodable { let track_id: String }
+
+    /// 自分の進行（所持ピース・解放曲）を Supabase から取得。未サインイン時は空。
+    func fetchProgress() async -> UserProgress {
+        var p = UserProgress()
+        if let data = (try? await rest(method: "GET", query: "collected_pieces?select=track_id,piece_number")) ?? nil,
+           let rows = try? JSONDecoder().decode([PieceRow].self, from: data) {
+            for r in rows { p.pieces[r.track_id, default: []].append(r.piece_number) }
+        }
+        if let data = (try? await rest(method: "GET", query: "unlocked_tracks?select=track_id")) ?? nil,
+           let rows = try? JSONDecoder().decode([TrackIdRow].self, from: data) {
+            for r in rows { p.unlocked.insert(r.track_id) }
+        }
+        return p
+    }
+
+    /// 所持ピースを1件保存（冪等。RLS で本人分のみ許可）。
+    func upsertPiece(trackId: String, piece: Int) async {
+        guard let uid = userId else { return }
+        let body = try? JSONSerialization.data(withJSONObject: [["user_id": uid, "track_id": trackId, "piece_number": piece]])
+        _ = try? await rest(method: "POST",
+                            query: "collected_pieces?on_conflict=user_id,track_id,piece_number",
+                            body: body, prefer: "resolution=ignore-duplicates,return=minimal")
+    }
+
+    /// 曲の解放を保存（冪等）。
+    func upsertUnlock(trackId: String) async {
+        guard let uid = userId else { return }
+        let body = try? JSONSerialization.data(withJSONObject: [["user_id": uid, "track_id": trackId]])
+        _ = try? await rest(method: "POST",
+                            query: "unlocked_tracks?on_conflict=user_id,track_id",
+                            body: body, prefer: "resolution=ignore-duplicates,return=minimal")
+    }
+
     // MARK: Persistence
 
     private func save(_ s: SavedSession) {

@@ -236,6 +236,8 @@ final class AppViewModel: ObservableObject {
         }
         // すべての seed/API ロード後に保存済み進行を反映
         restoreState()
+        // 方式A: Supabase の自分の進行（所持ピース・解放）を seed/ローカルにマージ
+        await mergeRemoteProgress()
     }
 
     private func loadUser() async {
@@ -277,6 +279,24 @@ final class AppViewModel: ObservableObject {
         if let p = try? await repository.fetchDailyPlaylist() { dailyPlaylist = p }
     }
 
+    /// 方式A: Supabase に保存された自分の進行を seed/ローカル状態にマージする。
+    /// 所持ピースは和集合、解放はONを反映（remote が真とみなす）。未サインイン時は空で no-op。
+    private func mergeRemoteProgress() async {
+        let prog = await SupabaseClient.shared.fetchProgress()
+        guard !prog.pieces.isEmpty || !prog.unlocked.isEmpty else { return }
+        for (trackId, pieces) in prog.pieces {
+            guard var t = tracks[trackId] else { continue }
+            t.ownedPieces = Array(Set(t.ownedPieces).union(pieces)).sorted()
+            tracks[trackId] = t
+        }
+        for trackId in prog.unlocked {
+            guard var t = tracks[trackId] else { continue }
+            t.isUnlocked = true
+            if !unlockedTrackIds.contains(trackId) { unlockedTrackIds.append(trackId) }
+            tracks[trackId] = t
+        }
+    }
+
     // MARK: - Piece collection (local / offline)
 
     func collectPiece(encounterId: String, candidateIndex: Int, pieceNumber: Int) {
@@ -293,6 +313,9 @@ final class AppViewModel: ObservableObject {
                 track.ownedPieces.sort()
                 tracks[trackId] = track
                 wasNewPiece = true
+
+                // 方式A: 所持ピースを Supabase に保存（サインイン時のみ・非同期）
+                Task { await SupabaseClient.shared.upsertPiece(trackId: trackId, piece: pieceNumber) }
 
                 // Mission progress
                 if let m = mission {
@@ -510,6 +533,8 @@ final class AppViewModel: ObservableObject {
             if !unlockedTrackIds.contains(trackId) { unlockedTrackIds.append(trackId) }
             tracks[trackId] = track
         }
+        // 方式A: 解放を Supabase に保存（サインイン時のみ）
+        await SupabaseClient.shared.upsertUnlock(trackId: trackId)
         do {
             try await repository.unlockTrack(trackId: trackId)
         } catch {}
