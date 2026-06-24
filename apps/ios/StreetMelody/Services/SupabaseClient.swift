@@ -152,6 +152,13 @@ actor SupabaseClient {
             ?? items.first(where: { $0.name == "error" })?.value {
             throw OAuthError.message("プロバイダ側エラー: \(errDesc)")
         }
+        // link はセッションを直接(#access_token=...)で返すことがある → その場合は直接確立
+        if let at = items.first(where: { $0.name == "access_token" })?.value,
+           let rt = items.first(where: { $0.name == "refresh_token" })?.value {
+            try await applyTokens(access: at, refresh: rt)
+            pendingVerifier = nil
+            return
+        }
         guard let code = items.first(where: { $0.name == "code" })?.value else {
             throw OAuthError.message("コールバックに code がありません: \(callback.absoluteString.prefix(80))")
         }
@@ -180,6 +187,19 @@ actor SupabaseClient {
         if link { bearer = accessToken }
         let data = try await authRequest(method: "POST", path: "/auth/v1/token?grant_type=id_token", body: body, bearer: bearer)
         _ = try apply(data)
+    }
+
+    /// access/refresh トークンから直接セッション確立（/auth/v1/user でユーザー取得）。
+    private func applyTokens(access: String, refresh: String) async throws {
+        accessToken = access
+        refreshToken = refresh
+        let data = try await authRequest(method: "GET", path: "/auth/v1/user", body: Data(), bearer: access)
+        if let u = try? JSONDecoder().decode(AuthUser.self, from: data) {
+            userId = u.id
+            email = (u.email?.isEmpty == false) ? u.email : nil
+            isAnonymous = u.is_anonymous ?? false
+            save(SavedSession(refreshToken: refresh, userId: u.id))
+        }
     }
 
     private static func pkceVerifier(_ n: Int = 64) -> String {
