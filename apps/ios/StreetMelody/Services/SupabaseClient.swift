@@ -128,10 +128,12 @@ actor SupabaseClient {
         req.setValue(anonKey, forHTTPHeaderField: "apikey")
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await session.data(for: req)
-        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw AuthError.http(http.statusCode) }
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw OAuthError.message("認可URL取得失敗(HTTP \(http.statusCode)): \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
+        }
         struct LinkURL: Decodable { let url: String }
         guard let lu = try? JSONDecoder().decode(LinkURL.self, from: data), let u = URL(string: lu.url) else {
-            throw AuthError.http(-1)
+            throw OAuthError.message("認可URLの解析に失敗: \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
         }
         return u
     }
@@ -193,13 +195,21 @@ actor SupabaseClient {
     private func applyTokens(access: String, refresh: String) async throws {
         accessToken = access
         refreshToken = refresh
-        let data = try await authRequest(method: "GET", path: "/auth/v1/user", body: Data(), bearer: access)
-        if let u = try? JSONDecoder().decode(AuthUser.self, from: data) {
-            userId = u.id
-            email = (u.email?.isEmpty == false) ? u.email : nil
-            isAnonymous = u.is_anonymous ?? false
-            save(SavedSession(refreshToken: refresh, userId: u.id))
+        guard let url = URL(string: baseURL + "/auth/v1/user") else { throw OAuthError.message("URL不正") }
+        var req = URLRequest(url: url)
+        req.setValue(anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw OAuthError.message("ユーザー取得失敗(HTTP \(http.statusCode)): \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
         }
+        guard let u = try? JSONDecoder().decode(AuthUser.self, from: data) else {
+            throw OAuthError.message("ユーザー解析に失敗: \(String(data: data, encoding: .utf8)?.prefix(140) ?? "")")
+        }
+        userId = u.id
+        email = (u.email?.isEmpty == false) ? u.email : nil
+        isAnonymous = u.is_anonymous ?? false
+        save(SavedSession(refreshToken: refresh, userId: u.id))
     }
 
     private static func pkceVerifier(_ n: Int = 64) -> String {
