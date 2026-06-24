@@ -821,6 +821,19 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// Sign in with Apple（id_token）で Supabase にサインインし、進行を復元。
+    func signInWithApple(idToken: String, nonce: String) async -> String? {
+        do {
+            try await SupabaseAuthKit.signInWithApple(idToken: idToken, nonce: nonce)
+            await refreshAccountState()
+            await mergeRemoteProgress()
+            showToast("Apple でサインインしました")
+            return nil
+        } catch {
+            return "Apple サインインに失敗しました。時間をおいて再度お試しください。"
+        }
+    }
+
     /// ログアウト（以後は匿名相当。ローカル進行は保持）。
     func signOutAccount() async {
         await SupabaseClient.shared.signOut()

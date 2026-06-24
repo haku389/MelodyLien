@@ -95,6 +95,17 @@ actor SupabaseClient {
         UserDefaults.standard.removeObject(forKey: sessionKey)
     }
 
+    /// 外部（Supabase SDK 等）で確立したセッションを取り込み、データ層を共有する。
+    /// Apple など OAuth/OIDC サインイン後に呼ぶ。
+    func adoptSession(accessToken: String, refreshToken: String, userId: String, email: String?, isAnonymous: Bool) {
+        self.accessToken = accessToken
+        self.refreshToken = refreshToken
+        self.userId = userId
+        self.email = (email?.isEmpty == false) ? email : nil
+        self.isAnonymous = isAnonymous
+        save(SavedSession(refreshToken: refreshToken, userId: userId))
+    }
+
     private func refresh(_ token: String) async throws -> String {
         let body = try JSONSerialization.data(withJSONObject: ["refresh_token": token])
         let data = try await authRequest(method: "POST", path: "/auth/v1/token?grant_type=refresh_token", body: body)

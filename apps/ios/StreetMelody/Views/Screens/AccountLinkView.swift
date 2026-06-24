@@ -1,4 +1,6 @@
 import SwiftUI
+import AuthenticationServices
+import CryptoKit
 
 /// アカウント連携 / ログイン（方式A）。
 /// - 連携: 今のゲスト（匿名）アカウントにメール＋パスワードを設定して永続化（機種変更・再インストールに対応）。
@@ -13,6 +15,7 @@ struct AccountLinkView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var busy = false
+    @State private var currentNonce: String?
 
     var body: some View {
         NavigationStack {
@@ -55,6 +58,23 @@ struct AccountLinkView: View {
                     }
                     .disabled(busy || email.isEmpty || password.count < 6)
 
+                    HStack {
+                        Rectangle().fill(Color(hex: "E0D8F7")).frame(height: 1)
+                        Text("または").font(.system(size: 11, weight: .heavy)).foregroundStyle(Color(hex: "B8ACD6"))
+                        Rectangle().fill(Color(hex: "E0D8F7")).frame(height: 1)
+                    }
+
+                    SignInWithAppleButton(.signIn) { request in
+                        let nonce = randomNonceString()
+                        currentNonce = nonce
+                        request.requestedScopes = [.fullName, .email]
+                        request.nonce = sha256(nonce)
+                    } onCompletion: { result in
+                        handleApple(result)
+                    }
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 46)
+
                     Spacer(minLength: 8)
                 }
                 .padding(20)
@@ -84,5 +104,46 @@ struct AccountLinkView: View {
                 dismiss()
             }
         }
+    }
+
+    private func handleApple(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard let cred = auth.credential as? ASAuthorizationAppleIDCredential,
+                  let tokenData = cred.identityToken,
+                  let idToken = String(data: tokenData, encoding: .utf8),
+                  let nonce = currentNonce else {
+                error = "Apple サインインの情報を取得できませんでした"
+                return
+            }
+            error = nil
+            Task {
+                if let err = await vm.signInWithApple(idToken: idToken, nonce: nonce) {
+                    error = err
+                } else {
+                    dismiss()
+                }
+            }
+        case .failure:
+            error = "Apple サインインがキャンセルされました"
+        }
+    }
+
+    // MARK: - Nonce（Sign in with Apple ⇄ Supabase の検証用）
+
+    private func randomNonceString(length: Int = 32) -> String {
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
+        var result = ""
+        var remaining = length
+        while remaining > 0 {
+            var random: UInt8 = 0
+            _ = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
+            if random < charset.count { result.append(charset[Int(random)]); remaining -= 1 }
+        }
+        return result
+    }
+
+    private func sha256(_ input: String) -> String {
+        SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }

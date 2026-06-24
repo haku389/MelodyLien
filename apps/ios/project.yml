@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.0.0"
+
 targets:
   StreetMelody:
     type: application
@@ -15,6 +20,9 @@ targets:
       - path: StreetMelody
         excludes:
           - "Resources/Info.plist"
+    dependencies:
+      - package: Supabase
+        product: Supabase
     info:
       path: StreetMelody/Resources/Info.plist
       properties:
