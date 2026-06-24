@@ -1,0 +1,17 @@
+# Go ビルドに不要なものを除外（コンテキストを小さく）
+apps/
+backend/
+server/
+docs/
+scripts/
+assets/
+puzzle_test/
+infra/
+shared/
+*.md
+.git/
+.gitignore
+**/.DS_Store
+**/node_modules/
+**/DerivedData/
+**/*.xcodeproj/

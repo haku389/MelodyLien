@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+# deploy-cloudrun.sh — MelodyLien API を Google Cloud Run にデプロイする
+#
+# 前提（あなたの環境で一度だけ）:
+#   1) gcloud CLI をインストール: brew install --cask google-cloud-sdk
+#   2) ログイン:                  gcloud auth login
+#   3) プロジェクト選択:          gcloud config set project <YOUR_GCP_PROJECT_ID>
+#      （課金が有効な GCP プロジェクトが必要）
+#
+# 使い方（リポジトリ直下で）:
+#   bash scripts/deploy-cloudrun.sh
+#   # 任意で上書き: PROJECT_ID=xxx REGION=asia-northeast1 SERVICE=melodylien-api bash scripts/deploy-cloudrun.sh
+#
+# ※ `--source .` で Cloud Build がリモートでコンテナをビルドするため、ローカル docker は不要。
+#    ルートの Dockerfile が使われる。
+set -euo pipefail
+
+PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
+REGION="${REGION:-asia-northeast1}"          # Supabase が東京なので近接リージョン
+SERVICE="${SERVICE:-melodylien-api}"
+
+# Supabase 接続（公開 anon キー。秘密ではない）
+SUPABASE_URL="${SUPABASE_URL:-https://wngtvdgzzlkajtbwsurc.supabase.co}"
+SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-sb_publishable_oR41TcNHu-G9La0JHrnmWg_P8SfRts5}"
+
+if [[ -z "$PROJECT_ID" ]]; then
+  echo "ERROR: GCP プロジェクトが未設定です。 gcloud config set project <ID> を実行するか PROJECT_ID=... を指定してください。" >&2
+  exit 1
+fi
+
+echo "▶ project=$PROJECT_ID region=$REGION service=$SERVICE"
+
+# 必要な API を有効化（初回のみ時間がかかる）
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+  --project "$PROJECT_ID"
+
+# デプロイ（ソースから。Cloud Build が Dockerfile をビルド）
+gcloud run deploy "$SERVICE" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
+  --source . \
+  --allow-unauthenticated \
+  --port 8080 \
+  --cpu 1 --memory 256Mi --min-instances 0 --max-instances 2 \
+  --set-env-vars "SUPABASE_URL=${SUPABASE_URL},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+
+echo ""
+URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+echo "✅ デプロイ完了: $URL"
+echo "   動作確認: curl $URL/api/tracks"
+echo ""
+echo "次の手順: iOS のリリース用 baseURL（apps/ios/MelodyLien/Services/APIService.swift の #else 側）を"
+echo "          \"$URL/api\" に更新するか、カスタムドメイン api.melodylien.app を Cloud Run にマッピングしてください。"
