@@ -2,33 +2,45 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>MelodyLien</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.melodylien.app</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
-
-    <!-- BLE バックグラウンドモード -->
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>bluetooth-central</string>
-        <string>bluetooth-peripheral</string>
-    </array>
-
-    <!-- BLE 使用目的 (必須) -->
-    <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>近くにいる人の推し曲を自動で受け取るために Bluetooth を使用します。</string>
-    <key>NSBluetoothPeripheralUsageDescription</key>
-    <string>あなたの推し曲情報を近くにいる人に届けるために Bluetooth を使用します。</string>
-
-    <!-- 通知 -->
-    <key>UIUserNotificationSettings</key>
-    <dict>
-        <key>UIUserNotificationTypes</key>
-        <integer>7</integer>
-    </dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.melodylien.app</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>MelodyLien</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>近くにいる人の推し曲を自動で受け取るために Bluetooth を使用します。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>あなたの推し曲情報を近くにいる人に届けるために Bluetooth を使用します。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>bluetooth-peripheral</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+	</dict>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
 </dict>
 </plist>

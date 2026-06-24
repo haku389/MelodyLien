@@ -14,11 +14,6 @@ export const SEED = {
   ],
   tracks: [
     {
-      id: "track_sunset_drive", artist_id: "artist_niziu",
-      title: "Sunset Drive", piece_count: 9, reward_coins: 100, reward_exp: 50,
-      youtube_video_id: null, color: "sunset",
-    },
-    {
       id: "track_lemon", artist_id: "artist_yonezu",
       title: "Lemon", piece_count: 9, reward_coins: 100, reward_exp: 50,
       youtube_video_id: null, color: "violet",
@@ -53,11 +48,6 @@ export const SEED = {
       id: "track_blueberry", artist_id: "artist_macaroni",
       title: "ブルーベリー", piece_count: 9, reward_coins: 100, reward_exp: 50,
       youtube_video_id: null, color: "berry",
-    },
-    {
-      id: "track_magic_hour", artist_id: "artist_higedan",
-      title: "Magic Hour", piece_count: 9, reward_coins: 100, reward_exp: 50,
-      youtube_video_id: null, color: "magic",
     },
     {
       id: "track_halzion", artist_id: "artist_yoasobi",

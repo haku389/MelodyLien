@@ -1,5 +1,5 @@
-import { ASSETS, formatNumber, maskForTrack, seedData, getPieceUrl, getPreviewUrl } from "./data.js";
-import { createStore } from "./store.js";
+import { ASSETS, formatNumber, maskForTrack, seedData, getPieceUrl, getPreviewUrl, todayKey, COOLDOWN_MS, OSHI_LIMIT, OSHI_LIMIT_PREMIUM, oshiLimit, PREMIUM_PRICE_LABEL, levelFromExp, SHOP_ITEMS } from "./data.js";
+import { createStore, getDailyMissionProgress, artistGroups, titleProgress } from "./store.js";
 import { searchTracks as apiSearch } from "./api.js";
 import { getAuthUser, signUpEmail, signInEmail, signInOAuth, signInGuest, signOut, onAuthChange } from "./supabase.js";
 import { syncOnLogin, syncAfterAction } from "./sync.js";
@@ -151,11 +151,6 @@ let previewSecondsLeft = 30;
 const PREVIEW_SECONDS = 30;
 const PREVIEW_DAILY_LIMIT = 3; // 1曲あたり1日3回まで
 
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 /** 残り試聴回数（日付が変わればリセット） */
 function previewPlaysLeft(state, trackId) {
   const rec = (state.previewPlays || {})[trackId];
@@ -280,6 +275,16 @@ function getSelectedTrack(state)  { return getTrack(state.selectedTrackId); }
 function getOwned(state, trackId) { return state.collectedPieces[trackId] || []; }
 function isUnlocked(state, id)    { return state.unlockedTrackIds.includes(id); }
 
+/** すれちがい相手（NPC）のuserIdから出会い情報を逆引き */
+function npcEncounterForUserId(userId) {
+  return Object.values(seedData.encounters).find((enc) => enc.fromUserId === userId) || null;
+}
+
+function formatDate(timestamp) {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /* ─── Partials ───────────────────────────────── */
 function coinPill(amount) {
   return `<div class="coin-pill"><img src="${ASSETS.coin}" alt="">${formatNumber(amount)}</div>`;
@@ -333,7 +338,6 @@ function puzzleGridMini(state, trackId) {
 }
 
 /** クールタイム残り秒数（0以下なら冷却済み） */
-const COOLDOWN_MS = 6 * 60 * 60 * 1000;
 function cooldownRemaining(state, encounterId) {
   const t = (state.encounterCooldowns || {})[encounterId];
   if (!t) return 0;
@@ -345,13 +349,18 @@ function formatCooldown(ms) {
   return `${h}時間${m}分`;
 }
 
-/** 次の未確認出会いへ進むボタン */
+/** 次に受け取れる出会いへ進むボタン（未確認 or クールタイム明け） */
 function nextEncounterButton(state) {
   const order = seedData.encounterOrder;
-  const nextId = order.find((id) => !((state.encounterCooldowns || {})[id]));
+  const nextId = order.find((id) => cooldownRemaining(state, id) === 0);
   if (!nextId) {
-    // 全て確認済み
-    return `<div style="text-align:center;padding:16px 0 4px;"><p style="font-size:11px;color:var(--muted);font-weight:800;">🎉 今日の出会いを全て確認しました</p></div>`;
+    // 全てクールタイム中 → 最短で再受信できるまでの時間を表示
+    const minMs = Math.min(...order.map((id) => cooldownRemaining(state, id)));
+    return `
+      <div style="text-align:center;padding:16px 0 4px;">
+        <p style="font-size:11px;color:var(--muted);font-weight:800;">🎉 今日の出会いを全て確認しました</p>
+        <p style="font-size:10px;color:var(--muted);margin-top:4px;">次の出会いまであと ${formatCooldown(minMs)}</p>
+      </div>`;
   }
   const enc = seedData.encounters[nextId];
   const nextIdx = order.indexOf(nextId);
@@ -499,7 +508,10 @@ function renderPuzzleComplete(state) {
             🧩 ${owned.length} / ${track.pieceCount} 完成
           </div>
           <div style="background:rgba(249,199,79,.2);border:1px solid rgba(249,199,79,.4);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:900;color:#f9c74f;">
-            🪙 +1 コイン
+            🪙 +${track.rewardCoins + 1} コイン
+          </div>
+          <div style="background:rgba(110,231,183,.18);border:1px solid rgba(110,231,183,.4);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:900;color:#6ee7b7;">
+            ⭐ +${track.rewardExp} EXP
           </div>
         </div>
 
@@ -519,6 +531,58 @@ function renderPuzzleComplete(state) {
   `;
 }
 
+/* ─── 称号獲得演出 ──────────────────────────── */
+function renderTitleCelebration(state) {
+  const root = document.getElementById("title-celebration-root");
+  if (!root) return;
+
+  const pending = state.pendingTitleCelebrations || [];
+  // パズル完成演出と重なる場合は、完成演出を閉じた後に表示する
+  if (pending.length === 0 || state.puzzleCompleteTrackId) {
+    root.innerHTML = "";
+    return;
+  }
+
+  const title = seedData.titles.find((t) => t.id === pending[0]);
+  if (!title) {
+    root.innerHTML = "";
+    return;
+  }
+
+  root.innerHTML = `
+    <style>
+      @keyframes tcBg   { from{opacity:0} to{opacity:1} }
+      @keyframes tcIn   { 0%{transform:scale(.6) translateY(30px);opacity:0} 65%{transform:scale(1.05) translateY(-5px)} 100%{transform:scale(1) translateY(0);opacity:1} }
+      @keyframes tcIcon { 0%,100%{transform:scale(1) rotate(-4deg)} 50%{transform:scale(1.12) rotate(4deg)} }
+    </style>
+    <div style="position:fixed;inset:0;z-index:310;background:rgba(6,2,20,.78);animation:tcBg .3s ease both;" aria-hidden="true"></div>
+    <div style="position:fixed;inset:0;z-index:311;display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div style="
+        width:100%;max-width:300px;text-align:center;
+        background:linear-gradient(160deg,#2a1450,#141c40);
+        border:1px solid rgba(249,199,79,.35);
+        border-radius:26px;padding:26px 22px;
+        box-shadow:0 28px 70px rgba(0,0,0,.65);
+        animation:tcIn .5s cubic-bezier(.34,1.56,.64,1) both;
+      ">
+        <p style="font-size:11px;font-weight:900;letter-spacing:.18em;color:#f9c74f;margin-bottom:14px;">TITLE UNLOCKED</p>
+        <div style="font-size:52px;line-height:1;margin-bottom:14px;display:inline-block;animation:tcIcon 1.8s ease-in-out infinite;">${title.icon}</div>
+        <h2 style="font-size:17px;font-weight:950;color:#fff;margin-bottom:6px;">称号「${title.name}」を獲得！</h2>
+        <p style="font-size:11px;color:rgba(255,255,255,.6);margin-bottom:14px;">${title.description}</p>
+        <div style="display:flex;gap:8px;justify-content:center;margin-bottom:18px;">
+          <span style="background:rgba(249,199,79,.2);border:1px solid rgba(249,199,79,.4);border-radius:16px;padding:5px 12px;font-size:10px;font-weight:900;color:#f9c74f;">🪙 +${title.rewardCoins} コイン</span>
+          <span style="background:rgba(110,231,183,.16);border:1px solid rgba(110,231,183,.4);border-radius:16px;padding:5px 12px;font-size:10px;font-weight:900;color:#6ee7b7;">⭐ +${title.rewardExp} EXP</span>
+        </div>
+        <button data-dismiss-title-celebration type="button"
+          style="width:100%;padding:12px;border:none;border-radius:15px;background:linear-gradient(90deg,#f9c74f,#f0a04b);color:#3a2400;font-size:13px;font-weight:950;cursor:pointer;letter-spacing:.04em;">
+          やったね！
+        </button>
+        ${pending.length > 1 ? `<p style="font-size:10px;color:rgba(255,255,255,.4);margin-top:10px;">ほかに ${pending.length - 1} 件の称号を獲得しています</p>` : ""}
+      </div>
+    </div>
+  `;
+}
+
 /* ─── Toast ─────────────────────────────────── */
 function renderToast(state) {
   const r = document.querySelector("#toast-root");
@@ -532,19 +596,21 @@ function renderToast(state) {
 function computeCollection(state) {
   const tracks  = Object.values(seedData.tracks);
   const done    = tracks.filter((t) => getOwned(state, t.id).length >= t.pieceCount).length;
-  const artists = Object.values(seedData.artists);
-  const aDone   = artists.filter((a) => a.completedTrackPuzzles >= a.totalTrackPuzzles).length;
-  return { done, total: tracks.length, aDone, aTotal: artists.length };
+  const groups  = artistGroups(state);
+  const aDone   = groups.filter((g) => g.completed >= g.tracks.length).length;
+  return { done, total: tracks.length, aDone, aTotal: groups.length };
 }
 
 function renderHome(state) {
   const { user, mission, dailyPlaylist } = seedData;
+  const dailyMission = getDailyMissionProgress(state);
   const heroId    = dailyPlaylist.trackIds[0];
   const heroTrack = getTrack(heroId);
   const heroOwned = heroTrack ? getOwned(state, heroId) : [];
   const heroTotal = heroTrack ? heroTrack.pieceCount : 0;
   const heroRem   = Math.max(heroTotal - heroOwned.length, 0);
   const col       = computeCollection(state);
+  const lv        = levelFromExp(state.exp);
 
   // 届いたメロディ件数（全出会いのうちクールタイムが切れているもの）
   const pendingCount = seedData.encounterOrder.filter(
@@ -557,17 +623,17 @@ function renderHome(state) {
 
   document.querySelector("#home-screen").innerHTML = `
     <div class="home-header">
-      <img class="avatar" src="${ASSETS.mascot}" alt="${user.name}">
+      ${avatarWithDeco(state)}
       <div class="home-user">
         <h1>${user.name}</h1>
-        <p>Lv.${user.level}</p>
-        <div class="progress"><span style="--progress:${user.levelProgress}%"></span></div>
+        <p>Lv.${lv.level}</p>
+        <div class="progress"><span style="--progress:${pct(lv.current, lv.next)}%"></span></div>
       </div>
       ${coinPill(state.coins)}
     </div>
 
-    <!-- 今日のサマリーバナー -->
-    ${pendingCount > 0 ? `
+    <!-- 今日のサマリーバナー（即時通知 ON のときだけ表示） -->
+    ${pendingCount > 0 && (state.notificationSettings?.immediate !== false) ? `
     <div class="notice-panel" style="cursor:pointer;margin-bottom:14px;" data-target="melody">
       <span style="background:var(--primary);color:#fff;font-size:10px;font-weight:950;border-radius:10px;padding:3px 8px;white-space:nowrap;">NEW</span>
       <div>
@@ -575,10 +641,18 @@ function renderHome(state) {
         <p>${mysteryCount > 0 ? `未解放曲が${mysteryCount}曲あります` : "パズル候補を確認しましょう"}</p>
       </div>
       <button class="btn primary btn small" data-target="melody" type="button">確認する</button>
+    </div>` : pendingCount > 0 ? `
+    <div class="notice-panel" style="cursor:pointer;margin-bottom:14px;opacity:.6;" data-target="melody">
+      <span style="font-size:16px;">🔕</span>
+      <div>
+        <strong>今日${pendingCount}件のメロディが届いています</strong>
+        <p>即時通知オフ — まとめ通知でお知らせします</p>
+      </div>
+      <button class="btn secondary btn small" data-target="melody" type="button">確認する</button>
     </div>` : ""}
 
     <!-- 今日のメロディ -->
-    <div class="hero-panel">
+    <div class="hero-panel" data-target="playlist" style="cursor:pointer;">
       <div class="art-block hero-art ${heroTrack?.color ?? ""}">
         <img src="${ASSETS.cover}" alt="">
       </div>
@@ -590,7 +664,7 @@ function renderHome(state) {
           <span>ピース</span>
         </div>
         <div class="progress"><span style="--progress:${pct(heroOwned.length, heroTotal)}%"></span></div>
-        <p>${heroRem > 0 ? `あと${heroRem}ピースで完成！` : "完成！"}</p>
+        <p>${heroRem > 0 ? `あと${heroRem}ピースで完成！` : "完成！"} · プレイリストを見る ›</p>
       </div>
     </div>
 
@@ -610,8 +684,13 @@ function renderHome(state) {
     <!-- デイリーミッション -->
     <div class="mission-panel">
       <h2>${mission.label}ミッション</h2>
-      <strong>${mission.current} / ${mission.target}</strong>
-      <div class="progress"><span style="--progress:${pct(mission.current, mission.target)}%"></span></div>
+      <strong>${dailyMission.progress} / ${mission.target}</strong>
+      <div class="progress"><span style="--progress:${pct(dailyMission.progress, mission.target)}%"></span></div>
+      <p style="grid-column:1 / -1;font-size:10px;color:var(--muted);margin-top:2px;">
+        ${dailyMission.claimed
+          ? `🎉 達成済み！メロディコイン +${mission.rewardCoins} を獲得しました`
+          : `ピースを${mission.target}個獲得しよう（達成でメロディコイン +${mission.rewardCoins}）`}
+      </p>
     </div>
 
     <!-- 最近届いた曲 -->
@@ -789,23 +868,24 @@ function renderMelody(state) {
           const enc = seedData.encounters[eid];
           const isActive = eid === state.activeEncounterId;
           const cdMs = cooldownRemaining(state, eid);
-          const isDone = cdMs > 0; // ピース選択済み → クールタイム発生
-          // 未確認（クールタイムなし）かつ現在より後 → ロック（順番制）
-          const isLocked = !isDone && !isActive && ei > encIdx;
+          const onCooldown = cdMs > 0; // 直近で交換済み・クールタイム中
+          // 未交換 or クールタイム明けで現在より後 → ロック（順番制。クールタイム明けで再受信可なら解除）
+          const isLocked = !onCooldown && !isActive && ei > encIdx;
+          const clickable = !isLocked;
           const isFriend = (state.friends || []).some(f => f.userId === enc.fromUserId);
           return `
-            <div ${isActive || isDone ? `data-switch-encounter-id="${eid}"` : ""}
+            <div ${clickable ? `data-switch-encounter-id="${eid}"` : ""}
               style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;
                 border:${isActive ? "2px solid var(--primary)" : "1px solid rgba(234,223,243,.8)"};
                 background:${isActive ? "rgba(143,109,244,.08)" : isLocked ? "rgba(0,0,0,.03)" : "#fff"};
-                cursor:${isActive || isDone ? "pointer" : "default"};
+                cursor:${clickable ? "pointer" : "default"};
                 opacity:${isLocked ? ".45" : "1"};">
               <div style="width:36px;height:36px;border-radius:50%;
-                background:${isDone ? "rgba(76,175,80,.15)" : isActive ? "var(--primary)" : "rgba(143,109,244,.15)"};
+                background:${onCooldown ? "rgba(76,175,80,.15)" : isActive ? "var(--primary)" : "rgba(143,109,244,.15)"};
                 display:flex;align-items:center;justify-content:center;flex:0 0 36px;
                 font-size:${isLocked ? "14px" : "14px"};font-weight:900;
-                color:${isDone ? "#4caf50" : isActive ? "#fff" : "var(--primary)"};">
-                ${isDone ? "✓" : isLocked ? "🔒" : ei + 1}
+                color:${onCooldown ? "#4caf50" : isActive ? "#fff" : "var(--primary)"};">
+                ${onCooldown ? "✓" : isLocked ? "🔒" : ei + 1}
               </div>
               <div style="min-width:0;flex:1;">
                 <strong style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
@@ -814,13 +894,13 @@ function renderMelody(state) {
                 <p style="font-size:10px;color:var(--muted);margin-top:1px;">📍 ${enc.locationLabel} · ${enc.candidates.length}曲</p>
               </div>
               <div style="text-align:right;flex:0 0 auto;">
-                ${isDone
-                  ? `<span style="font-size:9px;color:#4caf50;font-weight:900;background:rgba(76,175,80,.1);padding:2px 6px;border-radius:6px;">済</span>`
+                ${onCooldown
+                  ? `<span style="font-size:9px;color:#4caf50;font-weight:900;background:rgba(76,175,80,.1);padding:2px 6px;border-radius:6px;">済 · あと${formatCooldown(cdMs)}</span>`
                   : isActive
                     ? `<span style="font-size:9px;color:var(--primary);font-weight:900;">→ 今ここ</span>`
                     : isLocked
                       ? `<span style="font-size:9px;color:var(--muted);">順番待ち</span>`
-                      : `<span style="font-size:9px;color:var(--muted);">受信可</span>`}
+                      : `<span style="font-size:9px;color:var(--mint);font-weight:900;">受信可</span>`}
               </div>
             </div>`;
         }).join("")}
@@ -948,6 +1028,10 @@ function renderMystery(state) {
         <button class="btn secondary" data-ad="hint2"  type="button">2つ目のヒントを見る 🎫×1</button>
         <button class="btn coin"      data-ad="answer" type="button">答えを見る CM×1</button>
       </div>
+      ${!state.premium && (state.hintTickets || 0) > 0 ? `
+        <p style="font-size:10px;color:var(--primary);font-weight:800;text-align:center;margin-top:8px;">
+          🎟️ ヒントチケット ${state.hintTickets}枚所持 — 広告なしで解放されます
+        </p>` : ""}
       ${showChoices ? `
         <div class="section-heading" style="margin-top:16px;"><h2>4択ヒント</h2></div>
         <div class="choice-grid">
@@ -1049,7 +1133,6 @@ function renderPuzzle(state) {
 ═══════════════════════════════════════════════ */
 function renderCollection(state) {
   const allTracks  = Object.values(seedData.tracks);
-  const allArtists = Object.values(seedData.artists);
   const tab = state.collectionTab || "puzzles";
 
   const tabBtn = (id, label) =>
@@ -1118,22 +1201,25 @@ function renderCollection(state) {
 
     <!-- アーティストタブ -->
     ${tab === "artists" ? `
-      ${allArtists.map((artist) => {
-        const tracks = allTracks.filter((t) => t.artistId === artist.id);
-        const done   = tracks.filter((t) => getOwned(state, t.id).length >= t.pieceCount).length;
+      ${artistGroups(state).map((artist) => {
+        const tracks = artist.tracks;
         return `
           <div class="section-block" style="margin-top:14px;padding:14px;">
-            <div class="artist-profile" style="padding:0;border:none;background:none;box-shadow:none;backdrop-filter:none;">
-              <img src="${ASSETS.artist}" alt="${artist.name}">
-              <div>
-                <h2>${artist.name}</h2>
-                <p>曲パズル完成数</p>
-                <div class="piece-meter compact" style="margin-top:4px;">
-                  <strong>${artist.completedTrackPuzzles} / ${artist.totalTrackPuzzles}</strong>
-                  <span>完成</span>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;">
+              <div class="artist-profile" style="padding:0;border:none;background:none;box-shadow:none;backdrop-filter:none;flex:1;min-width:0;">
+                <img src="${ASSETS.artist}" alt="${artist.name}">
+                <div>
+                  <h2>${artist.name}</h2>
+                  <p>曲パズル完成数</p>
+                  <div class="piece-meter compact" style="margin-top:4px;">
+                    <strong>${artist.completed} / ${tracks.length}</strong>
+                    <span>完成</span>
+                  </div>
+                  <div class="progress"><span style="--progress:${pct(artist.completed, tracks.length)}%"></span></div>
                 </div>
-                <div class="progress"><span style="--progress:${pct(artist.completedTrackPuzzles, artist.totalTrackPuzzles)}%"></span></div>
               </div>
+              <button class="link-button" data-open-artist="${artist.id}" type="button"
+                style="flex:0 0 auto;margin-left:8px;margin-top:2px;font-size:11px;">詳細 ›</button>
             </div>
             <div class="artist-track-grid" style="margin-top:12px;">
               ${tracks.map((t) => {
@@ -1152,40 +1238,117 @@ function renderCollection(state) {
       }).join("")}` : ""}
 
     <!-- 推し曲タブ -->
-    ${tab === "oshi" ? `
+    ${tab === "oshi" ? (() => {
+      const oshiTracks = (state.oshiTrackIds || []).map(getTrack).filter(Boolean);
+      if (oshiTracks.length === 0) {
+        return `
+        <div class="section-block" style="margin-top:14px;padding:16px;">
+          <p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0;">
+            推し曲を設定すると、近距離交換でピースが届きます。<br>
+            マイページから設定できます（無料${OSHI_LIMIT}曲・プレミアム${OSHI_LIMIT_PREMIUM}曲）
+          </p>
+          <button class="btn primary full" data-target="mypage" type="button">推し曲を設定する</button>
+        </div>`;
+      }
+      return `
       <div class="section-block" style="margin-top:14px;padding:16px;">
-        <p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0;">
-          推し曲を設定すると、近距離交換でピースが届きます。<br>
-          マイページから設定できます（無料3曲・プレミアム5曲）
-        </p>
-        <button class="btn primary full" data-target="mypage" type="button">推し曲を設定する</button>
-      </div>` : ""}
+        <div class="section-heading"><h2>推し曲</h2><span style="font-size:10px;color:var(--muted);">${oshiTracks.length} / ${OSHI_LIMIT}曲</span></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:10px;">
+          ${oshiTracks.map((t) => `
+            <button class="song-tile" data-open-track="${t.id}" type="button">
+              ${artBlock(t.color)}
+              <strong>${t.title}</strong>
+              <span style="font-size:10px;color:var(--muted);">${t.artistName}</span>
+            </button>`).join("")}
+        </div>
+        <button class="btn secondary full" data-target="mypage" type="button" style="margin-top:14px;">推し曲を編集する</button>
+      </div>`;
+    })() : ""}
 
     <!-- 称号タブ -->
-    ${tab === "titles" ? `
+    ${tab === "titles" ? (() => {
+      const entries = seedData.titles.map((title) => ({ title, p: titleProgress(state, title) }));
+      const unlockedCount = entries.filter((e) => e.p.unlocked).length;
+      return `
       <div class="section-block" style="margin-top:14px;padding:16px;">
-        <p style="color:var(--muted);font-size:12px;text-align:center;padding:20px 0;">
-          パズルを完成させると称号が解放されます
-        </p>
-      </div>` : ""}
+        <div class="section-heading">
+          <h2>称号</h2>
+          <span style="font-size:10px;color:var(--muted);font-weight:800;">${unlockedCount} / ${entries.length} 獲得</span>
+        </div>
+        ${entries.map(({ title, p }) => `
+          <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;margin-top:10px;
+            background:${p.unlocked ? "linear-gradient(135deg,rgba(143,109,244,.12),rgba(76,210,150,.10))" : "rgba(0,0,0,.04)"};
+            border:1.5px solid ${p.unlocked ? "rgba(143,109,244,.3)" : "transparent"};">
+            <span style="font-size:24px;flex:0 0 auto;${p.unlocked ? "" : "filter:grayscale(1);opacity:.45;"}">${title.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <strong style="display:block;font-size:12px;${p.unlocked ? "" : "color:var(--muted);"}">${title.name}</strong>
+              <p style="font-size:10px;color:var(--muted);margin-top:2px;">${title.description}</p>
+              <p style="font-size:9px;color:var(--muted);margin-top:2px;">獲得報酬: 🪙${title.rewardCoins} · ⭐${title.rewardExp} EXP</p>
+              ${p.unlocked ? "" : `<div class="progress" style="margin-top:5px;"><span style="--progress:${pct(p.current, p.target)}%"></span></div>`}
+            </div>
+            <span style="font-size:10px;font-weight:900;white-space:nowrap;color:${p.unlocked ? "var(--mint)" : "var(--muted)"};">
+              ${p.unlocked ? "獲得済み" : `${p.current} / ${p.target}`}
+            </span>
+          </div>`).join("")}
+      </div>`;
+    })() : ""}
   `;
 }
 
 /* ═══════════════════════════════════════════════
    ⑦ ランキング
 ═══════════════════════════════════════════════ */
+/** すれちがいNPCの所持ピース数（プロトタイプ用の固定値。友達タブの行にも使用） */
+const NPC_PIECES = {
+  user_tanaka_yuki:   96,
+  user_sato_kenji:    81,
+  user_suzuki_aya:    64,
+  user_yamada_taro:   47,
+  user_nakamura_mika: 28,
+};
+
 function renderRanking(state) {
   const tab = state.rankingTab || "today";
   const tabBtn = (id, label) =>
     `<button class="collection-tab-btn${tab === id ? " active" : ""}" data-ranking-tab="${id}" type="button">${label}</button>`;
 
-  const dummyRanks = [
-    { rank: 1, title: "夜に駆ける",    artist: "YOASOBI",      count: 482 },
-    { rank: 2, title: "Lemon",          artist: "米津玄師",     count: 371 },
-    { rank: 3, title: "唱",             artist: "Ado",          count: 298 },
-    { rank: 4, title: "Magic Hour",     artist: "Official髭男dism", count: 244 },
-    { rank: 5, title: "怪獣の花唄",    artist: "Vaundy",       count: 189 },
-  ];
+  // 自分の所持ピース合計（ランキングの指標）
+  const myPieces = Object.values(state.collectedPieces).reduce((sum, arr) => sum + arr.length, 0);
+
+  // すれちがいNPC行（出会いデータから生成）
+  const npcRows = seedData.encounterOrder.map((eid) => {
+    const enc = seedData.encounters[eid];
+    return { name: enc.fromUserName, sub: enc.locationLabel, count: NPC_PIECES[enc.fromUserId] ?? 30 };
+  });
+
+  // タブごとの参加者プール（NPCは固定値・自分の行のみ実データ）
+  const pools = {
+    today: npcRows,
+    near: [
+      ...npcRows,
+      { name: "ともき", sub: "渋谷エリア", count: 142 },
+      { name: "りんか", sub: "渋谷エリア", count: 121 },
+    ],
+    all: [
+      { name: "ユウキ",   sub: "東京",   count: 512 },
+      { name: "さくら",   sub: "大阪",   count: 498 },
+      { name: "ハルト",   sub: "福岡",   count: 451 },
+      { name: "メイ",     sub: "名古屋", count: 387 },
+      { name: "ソウタ",   sub: "札幌",   count: 305 },
+      ...npcRows,
+    ],
+    friend: (state.friends || []).map((f) => ({
+      name: f.userName,
+      sub: `交換${f.exchangeCount}回`,
+      count: NPC_PIECES[f.userId] ?? 30,
+    })),
+  };
+
+  const hasFriends = tab !== "friend" || pools.friend.length > 0;
+  const rows = [...pools[tab], { name: `${seedData.user.name}（あなた）`, sub: "集めたピース", count: myPieces, isMe: true }]
+    .sort((a, b) => b.count - a.count)
+    .map((r, i) => ({ ...r, rank: i + 1 }));
+  const myRank = rows.find((r) => r.isMe)?.rank;
 
   document.querySelector("#ranking-screen").innerHTML = `
     <div class="home-header" style="margin-bottom:14px;">
@@ -1209,32 +1372,296 @@ function renderRanking(state) {
       <button class="btn primary btn small" data-auth-upgrade type="button">登録</button>
     </div>` : ""}
 
+    ${hasFriends ? `
     <div class="section-block" style="margin-top:14px;padding:14px;">
       <div class="section-heading">
-        <h2>${tab === "today" ? "今日の人気曲" : tab === "near" ? "近くのエリア" : tab === "friend" ? "友達・コミュニティ" : "全国人気曲"}</h2>
-        <span style="font-size:10px;color:var(--muted);">1時間更新</span>
+        <h2>${tab === "today" ? "今日すれちがった人" : tab === "near" ? "近くのエリア" : tab === "friend" ? "フレンド" : "全国"}</h2>
+        <span style="font-size:10px;color:var(--muted);">集めたピース数 · あなたは${myRank}位</span>
       </div>
-      ${dummyRanks.map((r) => `
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid rgba(234,223,243,.6);">
+      ${rows.map((r) => `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px ${r.isMe ? "8px" : "0"};border-bottom:1px solid rgba(234,223,243,.6);${r.isMe ? "background:rgba(143,109,244,.1);border-radius:12px;" : ""}">
           <span style="font-size:16px;font-weight:950;color:${r.rank <= 3 ? "var(--primary)" : "var(--muted)"};width:24px;text-align:center;">${r.rank}</span>
           <div style="flex:1;min-width:0;">
-            <strong style="display:block;font-size:12px;">${r.title}</strong>
-            <p style="font-size:10px;color:var(--muted);">${r.artist}</p>
+            <strong style="display:block;font-size:12px;${r.isMe ? "color:var(--primary);" : ""}">${r.name}</strong>
+            <p style="font-size:10px;color:var(--muted);">${r.sub}</p>
           </div>
-          <span style="font-size:10px;color:var(--muted);font-weight:800;">${r.count}人</span>
+          <span style="font-size:10px;color:${r.isMe ? "var(--primary)" : "var(--muted)"};font-weight:800;">${r.count}枚</span>
         </div>
       `).join("")}
-    </div>
+    </div>` : `
+    <div class="notice-panel" style="margin-top:14px;">
+      <span>🎵</span>
+      <div>
+        <strong>まだフレンドがいません</strong>
+        <p>すれちがいでピースを交換するとフレンド申請できます</p>
+      </div>
+      <button class="btn primary btn small" data-target="melody" type="button">出会いへ</button>
+    </div>`}
 
-    ${tab === "near" ? `
+    ${tab === "near" ? (state.premium ? `
+      <p style="margin-top:14px;font-size:10px;color:var(--muted);text-align:center;">⭐ プレミアム特典でエリアランキングを閲覧できます</p>` : `
       <div class="notice-panel" style="margin-top:14px;">
         <span>📍</span>
         <div>
           <strong>エリアランキング</strong>
           <p>離れたエリアの閲覧はプレミアム機能です</p>
         </div>
-        <button class="btn primary btn small" data-target="mypage" type="button">詳細</button>
-      </div>` : ""}
+        <button class="btn primary btn small" data-target="premium" type="button">詳細</button>
+      </div>`) : ""}
+  `;
+}
+
+/* ═══════════════════════════════════════════════
+   プレミアムプラン
+═══════════════════════════════════════════════ */
+function renderPremium(state) {
+  const benefits = [
+    { icon: "🚫", title: "広告非表示", desc: "ヒント・答えの解放時に広告視聴が不要になります" },
+    { icon: "🎵", title: `推し曲${OSHI_LIMIT_PREMIUM}曲`, desc: `推し曲の設定上限が${OSHI_LIMIT}曲 → ${OSHI_LIMIT_PREMIUM}曲に増えます` },
+    { icon: "📍", title: "エリアランキング", desc: "離れたエリアのランキングも閲覧できます" },
+  ];
+
+  document.querySelector("#premium-screen").innerHTML = `
+    ${screenHeader("プレミアムプラン", state.premium ? "⭐ 加入中" : "もっと音楽でつながる", "", "mypage")}
+
+    <div class="section-block" style="padding:20px;text-align:center;background:linear-gradient(160deg,rgba(249,199,79,.12),rgba(143,109,244,.08));border:1px solid rgba(249,199,79,.35);">
+      <div style="font-size:36px;margin-bottom:8px;">⭐</div>
+      <h2 style="font-size:16px;font-weight:950;">MelodyLien プレミアム</h2>
+      <p style="font-size:13px;font-weight:900;color:var(--primary);margin-top:6px;">${PREMIUM_PRICE_LABEL}</p>
+      <p style="font-size:10px;color:var(--muted);margin-top:4px;">プロトタイプのため決済は行われません（模擬加入）</p>
+    </div>
+
+    <div class="section-block" style="margin-top:14px;padding:16px;">
+      <div class="section-heading"><h2>特典</h2></div>
+      <div style="display:grid;gap:12px;margin-top:10px;">
+        ${benefits.map((b) => `
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:20px;flex:0 0 auto;">${b.icon}</span>
+            <div>
+              <strong style="font-size:12px;">${b.title}</strong>
+              <p style="font-size:10px;color:var(--muted);margin-top:2px;">${b.desc}</p>
+            </div>
+          </div>`).join("")}
+      </div>
+    </div>
+
+    <div style="margin-top:16px;">
+      ${state.premium ? `
+        <button class="btn secondary full" data-premium-cancel type="button">解約する</button>
+        <p style="font-size:9px;color:var(--muted);text-align:center;margin-top:8px;">解約すると推し曲は無料枠（${OSHI_LIMIT}曲）まで自動調整されます</p>` : `
+        <button class="btn primary full" data-premium-join type="button">プレミアムに加入する（模擬決済）</button>`}
+    </div>
+  `;
+}
+
+/* ─── アバター（装備中の装飾つき） ─────────────── */
+function avatarWithDeco(state) {
+  const deco = SHOP_ITEMS.find((i) => i.id === state.equippedDecoration);
+  return `
+    <div style="position:relative;flex:0 0 auto;">
+      <img class="avatar" src="${ASSETS.mascot}" alt="${seedData.user.name}">
+      ${deco ? `<span style="position:absolute;top:-9px;right:-7px;font-size:17px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.25));">${deco.icon}</span>` : ""}
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════
+   ショップ（メロディコインの使い道）
+═══════════════════════════════════════════════ */
+function renderShop(state) {
+  const items = SHOP_ITEMS.filter((i) => i.type !== "decoration");
+  const decos = SHOP_ITEMS.filter((i) => i.type === "decoration");
+  const owned = state.ownedDecorations || [];
+
+  const buyButton = (item) => state.coins >= item.price
+    ? `<button class="btn coin btn small" data-buy-item="${item.id}" type="button">🪙 ${item.price}</button>`
+    : `<button class="btn secondary btn small" type="button" disabled style="opacity:.5;">🪙 ${item.price}</button>`;
+
+  document.querySelector("#shop-screen").innerHTML = `
+    ${screenHeader("ショップ", "メロディコインでアイテムを購入できます", "", "mypage")}
+
+    <div class="section-block" style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <strong style="font-size:12px;">所持メロディコイン</strong>
+      <strong style="font-size:16px;color:var(--primary);">🪙 ${formatNumber(state.coins)}</strong>
+    </div>
+
+    <div class="section-block" style="margin-top:14px;padding:16px;">
+      <div class="section-heading"><h2>アイテム</h2></div>
+      <div style="display:grid;gap:12px;margin-top:10px;">
+        ${items.map((item) => `
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:24px;flex:0 0 32px;text-align:center;">${item.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <strong style="font-size:12px;">${item.name}${item.type === "ticket" ? ` <span style="font-size:10px;color:var(--muted);">（所持 ${state.hintTickets || 0}枚）</span>` : ""}</strong>
+              <p style="font-size:10px;color:var(--muted);margin-top:2px;">${item.desc}</p>
+            </div>
+            ${buyButton(item)}
+          </div>`).join("")}
+      </div>
+    </div>
+
+    <div class="section-block" style="margin-top:14px;padding:16px;">
+      <div class="section-heading"><h2>アバター装飾</h2><span style="font-size:10px;color:var(--muted);">買い切り・付け替え自由</span></div>
+      <div style="display:grid;gap:12px;margin-top:10px;">
+        ${decos.map((item) => {
+          const isOwned = owned.includes(item.id);
+          const equipped = state.equippedDecoration === item.id;
+          return `
+          <div style="display:flex;align-items:center;gap:12px;${equipped ? "background:rgba(143,109,244,.08);border-radius:12px;padding:6px 8px;margin:-6px -8px;" : ""}">
+            <span style="font-size:24px;flex:0 0 32px;text-align:center;">${item.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <strong style="font-size:12px;">${item.name}${equipped ? ` <span style="font-size:9px;color:var(--primary);font-weight:950;">装備中</span>` : ""}</strong>
+              <p style="font-size:10px;color:var(--muted);margin-top:2px;">${item.desc}</p>
+            </div>
+            ${isOwned
+              ? `<button class="btn ${equipped ? "secondary" : "primary"} btn small" data-equip-deco="${item.id}" type="button">${equipped ? "外す" : "装備する"}</button>`
+              : buyButton(item)}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:14px;">
+      コインはピース獲得・パズル完成・デイリーミッションで集められます
+    </p>
+  `;
+}
+
+/* ─── 設定画面共通: スイッチトグルと設定行 ─────── */
+function switchToggle(dataAttr, on) {
+  return `
+    <button ${dataAttr} type="button" aria-pressed="${on}"
+      style="width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;flex:0 0 44px;
+        background:${on ? "var(--primary)" : "rgba(0,0,0,.18)"};transition:background .15s;">
+      <span style="position:absolute;top:3px;left:${on ? "23px" : "3px"};width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 3px rgba(0,0,0,.25);"></span>
+    </button>`;
+}
+
+function settingRow(dataAttr, title, desc, on) {
+  return `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid rgba(234,223,243,.6);">
+      <div style="flex:1;min-width:0;">
+        <strong style="font-size:12px;">${title}</strong>
+        <p style="font-size:10px;color:var(--muted);margin-top:2px;">${desc}</p>
+      </div>
+      ${switchToggle(dataAttr, on)}
+    </div>`;
+}
+
+/* ═══════════════════════════════════════════════
+   通知設定
+═══════════════════════════════════════════════ */
+function renderNotifySettings(state) {
+  const ns = state.notificationSettings || { immediate: true, digest: false, digestTime: "20:00", encounter: true, mission: true };
+  const row = (key, title, desc, on) => settingRow(`data-toggle-notification="${key}"`, title, desc, on);
+
+  document.querySelector("#notify-settings-screen").innerHTML = `
+    ${screenHeader("通知設定", "メロディが届いたときの通知方法", "", "mypage")}
+
+    <div class="section-block" style="padding:4px 16px;">
+      ${row("immediate", "即時通知", "メロディが届いたらすぐに通知します", ns.immediate)}
+      ${row("digest", "まとめ通知", "1日1回、決まった時間にまとめて通知します", ns.digest)}
+      ${ns.digest ? `
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid rgba(234,223,243,.6);">
+          <span style="font-size:10px;color:var(--muted);font-weight:800;flex:0 0 auto;">通知時間</span>
+          ${["09:00", "12:00", "20:00"].map((tm) => `
+            <button data-digest-time="${tm}" type="button"
+              style="border:1px solid ${ns.digestTime === tm ? "var(--primary)" : "rgba(0,0,0,.12)"};
+                background:${ns.digestTime === tm ? "rgba(143,109,244,.12)" : "transparent"};
+                color:${ns.digestTime === tm ? "var(--primary)" : "var(--muted)"};
+                font-size:11px;font-weight:900;padding:6px 12px;border-radius:16px;cursor:pointer;">${tm}</button>`).join("")}
+        </div>` : ""}
+      ${row("encounter", "すれちがい通知", "近くで新しい出会いがあったときに通知します", ns.encounter)}
+      ${row("mission", "ミッション達成通知", "デイリーミッションを達成したときに通知します", ns.mission)}
+    </div>
+
+    <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:14px;">
+      プロトタイプのため実際の通知は送信されません（設定は保存されます）
+    </p>
+  `;
+}
+
+/* ═══════════════════════════════════════════════
+   バックグラウンド検知設定
+═══════════════════════════════════════════════ */
+const BG_SCAN_MODES = [
+  { id: "powersave",   label: "省電力", desc: "約15分ごとに検知 · バッテリー消費 小" },
+  { id: "balanced",    label: "標準",   desc: "約5分ごとに検知 · バッテリー消費 中" },
+  { id: "performance", label: "高頻度", desc: "約1分ごとに検知 · バッテリー消費 大" },
+];
+
+function renderBgSettings(state) {
+  const bg = state.backgroundScan || { enabled: true, mode: "balanced", nightPause: false };
+
+  document.querySelector("#bg-settings-screen").innerHTML = `
+    ${screenHeader("バックグラウンド検知", "すれちがいスキャンの省電力設定", "", "mypage")}
+
+    <div class="section-block" style="padding:4px 16px;">
+      ${settingRow(`data-toggle-bg="enabled"`, "バックグラウンド検知", "アプリを閉じていても近くの出会いを検知します", bg.enabled)}
+      ${bg.enabled ? `
+        <div style="padding:12px 0;border-bottom:1px solid rgba(234,223,243,.6);">
+          <strong style="font-size:12px;">スキャン頻度</strong>
+          <div style="display:grid;gap:8px;margin-top:10px;">
+            ${BG_SCAN_MODES.map((m) => `
+              <button data-bg-mode="${m.id}" type="button"
+                style="display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;padding:10px 12px;border-radius:14px;
+                  border:1.5px solid ${bg.mode === m.id ? "var(--primary)" : "rgba(0,0,0,.1)"};
+                  background:${bg.mode === m.id ? "rgba(143,109,244,.1)" : "transparent"};">
+                <span style="width:16px;height:16px;border-radius:50%;flex:0 0 16px;
+                  border:2px solid ${bg.mode === m.id ? "var(--primary)" : "rgba(0,0,0,.2)"};
+                  background:${bg.mode === m.id ? "var(--primary)" : "transparent"};box-shadow:inset 0 0 0 3px #fff;"></span>
+                <span style="min-width:0;">
+                  <strong style="display:block;font-size:12px;color:${bg.mode === m.id ? "var(--primary)" : "inherit"};">${m.label}</strong>
+                  <span style="font-size:10px;color:var(--muted);">${m.desc}</span>
+                </span>
+              </button>`).join("")}
+          </div>
+        </div>
+        ${settingRow(`data-toggle-bg="nightPause"`, "夜間は検知しない", "22時〜翌6時はスキャンを停止してバッテリーを節約します", bg.nightPause)}` : ""}
+    </div>
+
+    <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:14px;">
+      プロトタイプのため実際のスキャンは行われません（設定は保存されます）
+    </p>
+  `;
+}
+
+/* ═══════════════════════════════════════════════
+   今日のメロディプレイリスト
+═══════════════════════════════════════════════ */
+function renderPlaylist(state) {
+  const pl  = seedData.dailyPlaylist;
+  const enc = seedData.encounters[pl.encounterId];
+  const subtitle = enc
+    ? `${pl.dateLabel}・${enc.locationLabel}で${enc.connectedUsers}人と音楽でつながりました`
+    : pl.dateLabel;
+
+  document.querySelector("#playlist-screen").innerHTML = `
+    ${screenHeader(pl.title, subtitle, "", "home")}
+
+    <div class="track-list section-block">
+      ${pl.trackIds.map(getTrack).filter(Boolean).map((t) => {
+        const owned    = getOwned(state, t.id);
+        const unlocked = isUnlocked(state, t.id);
+        const done     = owned.length >= t.pieceCount;
+        return `
+        <div class="track-row" style="cursor:pointer;" data-open-track="${t.id}">
+          <div class="art-block ${t.color}" style="width:48px;height:48px;border-radius:12px;flex:0 0 48px;"></div>
+          <div style="min-width:0;flex:1;">
+            <strong>${unlocked ? t.title : "未解放メロディ"}</strong>
+            <p>${t.artistName}</p>
+            <div class="progress" style="margin-top:4px;"><span style="--progress:${pct(owned.length, t.pieceCount)}%"></span></div>
+          </div>
+          <div style="text-align:right;flex:0 0 auto;">
+            <strong style="display:block;font-size:11px;color:${done ? "var(--mint)" : "inherit"};">${done ? "完成！" : `${owned.length} / ${t.pieceCount}`}</strong>
+            <button class="btn secondary btn small" data-preview-track="${t.id}" type="button" style="margin-top:4px;">▶ 試聴</button>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <p style="font-size:10px;color:var(--muted);text-align:center;margin-top:14px;">
+      すれちがいで出会った曲から、今日のプレイリストが自動で作られます
+    </p>
   `;
 }
 
@@ -1243,14 +1670,16 @@ function renderRanking(state) {
 ═══════════════════════════════════════════════ */
 function renderMypage(state) {
   const { user } = seedData;
+  const lv = levelFromExp(state.exp);
 
   document.querySelector("#mypage-screen").innerHTML = `
     <div class="home-header" style="margin-bottom:14px;">
-      <img class="avatar" src="${ASSETS.mascot}" alt="${user.name}">
+      ${avatarWithDeco(state)}
       <div class="home-user">
-        <h1>${user.name}</h1>
-        <p>Lv.${user.level} · メロディコイン ${formatNumber(state.coins)}</p>
-        <div class="progress"><span style="--progress:${user.levelProgress}%"></span></div>
+        <h1>${user.name}${state.premium ? ` <span style="font-size:9px;font-weight:950;color:#b8860b;background:linear-gradient(90deg,rgba(249,199,79,.25),rgba(240,160,75,.25));border:1px solid rgba(249,199,79,.5);border-radius:10px;padding:2px 8px;vertical-align:middle;">⭐ プレミアム</span>` : ""}</h1>
+        <p>Lv.${lv.level} · メロディコイン ${formatNumber(state.coins)}</p>
+        <div class="progress"><span style="--progress:${pct(lv.current, lv.next)}%"></span></div>
+        <p style="font-size:9px;color:var(--muted);margin-top:2px;">次のレベルまで あと${lv.next - lv.current} EXP</p>
       </div>
     </div>
 
@@ -1282,11 +1711,55 @@ function renderMypage(state) {
       })()}
     </div>
 
+    <!-- フレンド -->
+    <div class="section-block" style="padding:16px;margin-bottom:14px;cursor:pointer;" data-target="friends">
+      <div class="section-heading">
+        <h2>フレンド</h2>
+        <span style="font-size:10px;color:var(--muted);">${(state.friends || []).length}人</span>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;">音楽でつながった履歴を見る</p>
+      <button class="btn secondary full" data-target="friends" type="button" style="margin-top:10px;">フレンド一覧を見る</button>
+    </div>
+
     <!-- 推し曲設定 -->
     <div class="section-block" style="padding:16px;">
-      <div class="section-heading"><h2>推し曲設定</h2><span style="font-size:10px;color:var(--muted);">0 / 3曲</span></div>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px;">推し曲を設定すると、近くにいる人にあなたの推し曲が届きます</p>
-      <button class="btn primary full" type="button">推し曲を追加する</button>
+      <div class="section-heading"><h2>推し曲設定</h2><span style="font-size:10px;color:var(--muted);">${(state.oshiTrackIds || []).length} / ${oshiLimit(state)}曲</span></div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px;">推し曲を設定すると、すれちがいの相手にあなたの推し曲が届きます（解放済みの曲から選べます）</p>
+      ${(() => {
+        const total = Object.values(state.oshiDeliveries || {}).reduce((n, c) => n + c, 0);
+        return total > 0 ? `<p style="font-size:10px;color:var(--primary);font-weight:800;margin-top:4px;">🎵 これまでに ${total}回 届けました</p>` : "";
+      })()}
+      ${(state.oshiTrackIds || []).length === 0 ? `
+        <p style="color:var(--muted);font-size:11px;text-align:center;padding:14px 0;">まだ推し曲が設定されていません</p>` : `
+        <div style="display:grid;gap:8px;margin-top:10px;">
+          ${(state.oshiTrackIds || []).map((id) => {
+            const t = getTrack(id);
+            return `
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:rgba(143,109,244,.06);">
+                <div class="art-block ${t.color}" style="width:36px;height:36px;border-radius:10px;flex:0 0 36px;"></div>
+                <div style="min-width:0;flex:1;">
+                  <strong style="display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${t.title}</strong>
+                  <span style="font-size:10px;color:var(--muted);">${t.artistName}</span>
+                </div>
+                <button data-toggle-oshi="${id}" type="button"
+                  style="border:none;background:rgba(0,0,0,.06);color:var(--muted);width:26px;height:26px;border-radius:50%;font-size:12px;font-weight:900;cursor:pointer;flex:0 0 26px;">✕</button>
+              </div>`;
+          }).join("")}
+        </div>`}
+      ${(state.oshiTrackIds || []).length < oshiLimit(state) ? `
+        <div style="margin-top:14px;">
+          <p style="font-size:10px;color:var(--muted);font-weight:800;margin-bottom:6px;">解放済みの曲から選択</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${state.unlockedTrackIds.filter((id) => !(state.oshiTrackIds || []).includes(id)).map((id) => {
+              const t = getTrack(id);
+              return `<button data-toggle-oshi="${id}" type="button"
+                style="border:1px solid rgba(143,109,244,.3);background:rgba(143,109,244,.06);color:var(--primary);
+                  font-size:11px;font-weight:900;padding:6px 12px;border-radius:20px;cursor:pointer;">+ ${t.title}</button>`;
+            }).join("") || `<p style="color:var(--muted);font-size:11px;">解放済みの曲がありません</p>`}
+          </div>
+        </div>` : state.premium ? `
+        <p style="font-size:10px;color:var(--muted);margin-top:10px;">上限（${OSHI_LIMIT_PREMIUM}曲）に達しています</p>` : `
+        <p style="font-size:10px;color:var(--muted);margin-top:10px;">上限（${OSHI_LIMIT}曲）に達しています。<button data-target="premium" type="button" style="border:none;background:none;color:var(--primary);font-size:10px;font-weight:900;cursor:pointer;padding:0;text-decoration:underline;">プレミアム</button>で${OSHI_LIMIT_PREMIUM}曲まで設定可能</p>`}
     </div>
 
     <!-- 音楽サービス連携 -->
@@ -1294,36 +1767,185 @@ function renderMypage(state) {
       <div class="section-heading"><h2>音楽サービス連携</h2></div>
       <div style="display:grid;gap:10px;margin-top:10px;">
         ${[
-          { name: "Spotify", icon: "🎵", connected: false },
-          { name: "Apple Music", icon: "🎵", connected: false },
-          { name: "YouTube Music", icon: "▶", connected: false },
-        ].map((s) => `
+          { id: "spotify",      name: "Spotify",       icon: "🎵" },
+          { id: "appleMusic",   name: "Apple Music",   icon: "🎵" },
+          { id: "youtubeMusic", name: "YouTube Music", icon: "▶" },
+        ].map((sv) => {
+          const connected = (state.linkedServices || {})[sv.id];
+          return `
           <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(234,223,243,.6);">
-            <span style="font-size:13px;font-weight:900;">${s.icon} ${s.name}</span>
-            <button class="btn ${s.connected ? "secondary" : "primary"} btn small" type="button">
-              ${s.connected ? "連携済み" : "連携する"}
+            <span style="font-size:13px;font-weight:900;">${sv.icon} ${sv.name}${connected ? ` <span style="font-size:9px;color:var(--mint);font-weight:950;">✓ 連携中</span>` : ""}</span>
+            <button class="btn ${connected ? "secondary" : "primary"} btn small" data-link-service="${sv.id}" type="button">
+              ${connected ? "解除" : "連携する"}
             </button>
-          </div>`).join("")}
+          </div>`;
+        }).join("")}
       </div>
     </div>
 
     <!-- 設定メニュー -->
     <div class="section-block" style="margin-top:14px;padding:0;">
       ${[
-        { label: "通知設定", sub: "即時通知・まとめ通知の設定" },
-        { label: "バックグラウンド検知", sub: "省電力スキャンの設定" },
-        { label: "プレミアムプラン", sub: "広告非表示・推し曲5曲・エリアランキング" },
-        { label: "ショップ", sub: "メロディコイン · アバター装飾" },
+        { label: "通知設定", sub: "即時通知・まとめ通知の設定", target: "notify-settings" },
+        { label: "バックグラウンド検知", sub: (state.backgroundScan || {}).enabled === false ? "オフ" : `オン · ${(BG_SCAN_MODES.find((m) => m.id === (state.backgroundScan || {}).mode) || BG_SCAN_MODES[1]).label}スキャン`, target: "bg-settings" },
+        { label: "プレミアムプラン", sub: state.premium ? "⭐ 加入中 · 広告非表示・推し曲5曲・エリアランキング" : "広告非表示・推し曲5曲・エリアランキング", target: "premium" },
+        { label: "ショップ", sub: `メロディコイン · アバター装飾${state.hintTickets ? ` · 🎟️×${state.hintTickets}` : ""}`, target: "shop" },
         { label: "ヘルプ", sub: "" },
         { label: "利用規約 / プライバシーポリシー", sub: "" },
       ].map((m) => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(234,223,243,.6);cursor:pointer;">
+        <div ${m.target ? `data-target="${m.target}"` : ""} style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(234,223,243,.6);cursor:pointer;">
           <div>
             <strong style="font-size:13px;">${m.label}</strong>
             ${m.sub ? `<p style="font-size:10px;color:var(--muted);margin-top:2px;">${m.sub}</p>` : ""}
           </div>
           <span style="color:var(--muted);font-size:16px;">›</span>
         </div>`).join("")}
+    </div>
+  `;
+}
+
+/* ═══════════════════════════════════════════════
+   ⑨ フレンド一覧
+═══════════════════════════════════════════════ */
+function renderFriends(state) {
+  const friends = [...(state.friends || [])].sort((a, b) => b.addedAt - a.addedAt);
+
+  document.querySelector("#friends-screen").innerHTML = `
+    ${screenHeader("フレンド", `${friends.length}人とつながっています`, "", "mypage")}
+
+    ${friends.length === 0 ? `
+    <div class="notice-panel">
+      <span>🎵</span>
+      <div>
+        <strong>まだフレンドがいません</strong>
+        <p>すれちがいでピースを交換するとフレンドになれます</p>
+      </div>
+    </div>` : `
+    <div class="track-list section-block">
+      ${friends.map((f) => {
+        const enc = npcEncounterForUserId(f.userId);
+        return `
+        <div class="track-row" style="cursor:pointer;" data-open-friend="${f.userId}">
+          <div style="width:48px;height:48px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:18px;color:#fff;">🎵</div>
+          <div style="min-width:0;">
+            <strong>${f.userName}</strong>
+            <p>${formatDate(f.addedAt)}にフレンドに${enc ? ` · 📍 ${enc.locationLabel}` : ""}</p>
+          </div>
+          <div style="text-align:right;">
+            <strong style="display:block;font-size:12px;">交換 ${f.exchangeCount}回</strong>
+            <span style="color:var(--muted);font-size:14px;">›</span>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`}
+  `;
+}
+
+/* ═══════════════════════════════════════════════
+   ⑩ フレンド詳細
+═══════════════════════════════════════════════ */
+function renderFriendDetail(state) {
+  const friend = (state.friends || []).find((f) => f.userId === state.selectedFriendUserId);
+  if (!friend) {
+    document.querySelector("#friend-detail-screen").innerHTML = `
+      ${screenHeader("フレンド", "", "", "friends")}
+      <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:40px;">フレンドが見つかりません</p>
+    `;
+    return;
+  }
+
+  const enc = npcEncounterForUserId(friend.userId);
+  const friendDays = Math.max(1, Math.floor((Date.now() - friend.addedAt) / 86400000) + 1);
+
+  document.querySelector("#friend-detail-screen").innerHTML = `
+    ${screenHeader(friend.userName, enc ? `📍 ${enc.locationLabel}で出会いました` : "音楽でつながりました", "", "friends")}
+
+    <div class="home-header" style="margin-bottom:14px;">
+      <div class="avatar" style="display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;">🎵</div>
+      <div class="home-user">
+        <h1>${friend.userName}</h1>
+        <p>${formatDate(friend.addedAt)}にフレンドになりました</p>
+      </div>
+    </div>
+
+    <div class="section-block" style="padding:16px;">
+      <div class="stat-grid">
+        <div class="stat-tile"><span>フレンド歴</span><strong>${friendDays}日</strong></div>
+        <div class="stat-tile"><span>交換回数</span><strong>${friend.exchangeCount}回</strong></div>
+        <div class="stat-tile"><span>出会った場所</span><strong>${enc ? enc.locationLabel : "—"}</strong></div>
+      </div>
+      ${(state.oshiDeliveries || {})[friend.userId] ? `
+        <p style="font-size:10px;color:var(--muted);margin-top:10px;text-align:center;">
+          🎵 あなたの推し曲をこれまでに ${(state.oshiDeliveries || {})[friend.userId]}回 届けました
+        </p>` : ""}
+    </div>
+
+    ${enc ? `
+    <div class="section-block" style="margin-top:14px;padding:16px;">
+      <div class="section-heading"><h2>音楽でつながった曲</h2></div>
+      <div class="song-grid">
+        ${enc.candidates.map((c) => getTrack(c.trackId)).filter(Boolean).map((t) => `
+          <button class="song-tile" data-open-track="${t.id}" type="button">
+            ${artBlock(t.color)}
+            <strong>${isUnlocked(state, t.id) ? t.title : "未解放メロディ"}</strong>
+            <span>${t.artistName}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>` : ""}
+  `;
+}
+
+/* ─── アーティスト詳細画面 ──────────────────────── */
+function renderArtistDetail(state) {
+  const root = document.querySelector("#artist-detail-screen");
+  if (!root) return;
+  const artistId = state.selectedArtistId;
+  if (!artistId) { root.innerHTML = ""; return; }
+  const groups = artistGroups(state);
+  const artist = groups.find((g) => g.id === artistId);
+  if (!artist) { root.innerHTML = ""; return; }
+
+  root.innerHTML = `
+    ${screenHeader(artist.name, `曲パズル ${artist.completed} / ${artist.tracks.length} 完成`, "", "collection")}
+
+    <div style="padding:4px 16px 16px;">
+      <div style="display:flex;align-items:center;gap:14px;padding:16px;background:rgba(255,255,255,.04);border-radius:18px;margin-bottom:16px;">
+        <img src="${ASSETS.artist}" alt="${artist.name}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;flex:0 0 64px;">
+        <div style="min-width:0;flex:1;">
+          <h2 style="font-size:16px;font-weight:950;margin-bottom:4px;">${artist.name}</h2>
+          <div class="piece-meter compact">
+            <strong>${artist.completed}</strong>
+            <span>/ ${artist.tracks.length} 曲完成</span>
+          </div>
+          <div class="progress" style="margin-top:6px;"><span style="--progress:${pct(artist.completed, artist.tracks.length)}%"></span></div>
+        </div>
+      </div>
+
+      <p style="font-size:11px;font-weight:900;color:var(--muted);letter-spacing:.06em;margin-bottom:10px;">曲パズル一覧</p>
+      <div style="display:grid;gap:10px;">
+        ${artist.tracks.map((t) => {
+          const owned = getOwned(state, t.id);
+          const done  = owned.length >= t.pieceCount;
+          return `
+            <button class="song-tile" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;"
+              data-open-track="${t.id}" type="button">
+              <div class="art-block ${t.color}" style="width:52px;height:52px;border-radius:14px;flex:0 0 52px;"></div>
+              <div style="min-width:0;flex:1;">
+                <strong style="display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  ${isUnlocked(state, t.id) ? t.title : "未解放メロディ"}
+                </strong>
+                <span style="font-size:10px;color:var(--muted);">${t.artistName}</span>
+                <div class="progress" style="margin-top:5px;"><span style="--progress:${pct(owned.length, t.pieceCount)}%"></span></div>
+              </div>
+              <div style="flex:0 0 auto;text-align:right;padding-left:4px;">
+                <span style="font-size:11px;font-weight:900;color:${done ? "var(--mint)" : "var(--muted)"};">
+                  ${done ? "完成!" : `${owned.length}/${t.pieceCount}`}
+                </span>
+              </div>
+            </button>`;
+        }).join("")}
+      </div>
     </div>
   `;
 }
@@ -1340,10 +1962,19 @@ function renderAll() {
   renderPuzzle(s);
   renderCollection(s);
   renderRanking(s);
+  renderPremium(s);
+  renderPlaylist(s);
+  renderShop(s);
+  renderNotifySettings(s);
+  renderBgSettings(s);
   renderMypage(s);
+  renderFriends(s);
+  renderFriendDetail(s);
+  renderArtistDetail(s);
   renderModal(s);
   renderToast(s);
   renderPuzzleComplete(s);
+  renderTitleCelebration(s);
   renderAuth(s);
 
   document.querySelectorAll(".screen").forEach((el) =>
@@ -1398,6 +2029,13 @@ function handleGuess(track) {
 document.addEventListener("click", (e) => {
   const t = (sel) => e.target.closest(sel);
 
+  // 試聴は行全体のクリック（data-open-track 等）より優先
+  if (t("[data-preview-track]")) {
+    e.stopPropagation();
+    openPreview(t("[data-preview-track]").dataset.previewTrack);
+    return;
+  }
+
   if (t("[data-target]"))        return store.dispatch({ type: "NAVIGATE", screen: t("[data-target]").dataset.target });
   if (t("[data-back]"))          return store.dispatch({ type: "NAVIGATE", screen: t("[data-back]").dataset.back });
   if (t("[data-open-track]"))    return store.dispatch({ type: "OPEN_TRACK", trackId: t("[data-open-track]").dataset.openTrack });
@@ -1451,13 +2089,6 @@ document.addEventListener("click", (e) => {
     return;
   }
 
-  // 試聴
-  if (t("[data-preview-track]")) {
-    e.stopPropagation();
-    openPreview(t("[data-preview-track]").dataset.previewTrack);
-    return;
-  }
-
   if (t("[data-guess-track]"))   return handleGuess(getTrack(t("[data-guess-track]").dataset.guessTrack));
   if (t("[data-dismiss-puzzle-complete]")) {
     const after = t("[data-dismiss-puzzle-complete]").dataset.after;
@@ -1467,13 +2098,33 @@ document.addEventListener("click", (e) => {
   }
   if (t("[data-listen-later]"))  return store.dispatch({ type: "ADD_LISTEN_LATER", trackId: t("[data-listen-later]").dataset.listenLater });
   if (t("[data-unlock-track]"))  return store.dispatch({ type: "UNLOCK_TRACK" });
-  if (t("[data-ad]"))            return store.dispatch({ type: "OPEN_AD_MODAL", kind: t("[data-ad]").dataset.ad });
+  if (t("[data-ad]")) {
+    // 解放手段の優先順: プレミアム（広告非表示）> ヒントチケット消費 > 広告確認モーダル
+    const kind = t("[data-ad]").dataset.ad;
+    const cur = store.getState();
+    if (cur.premium) return store.dispatch({ type: "COMPLETE_AD", kind });
+    if ((cur.hintTickets || 0) > 0) return store.dispatch({ type: "COMPLETE_AD", kind, viaTicket: true });
+    return store.dispatch({ type: "OPEN_AD_MODAL", kind });
+  }
   if (t("[data-add-friend-confirm]")) {
     const pf = store.getState().pendingFriendAdd;
     if (pf) store.dispatch({ type: "ADD_FRIEND", userId: pf.userId, userName: pf.userName });
     return;
   }
   if (t("[data-dismiss-friend-prompt]")) return store.dispatch({ type: "DISMISS_FRIEND_PROMPT" });
+  if (t("[data-dismiss-title-celebration]")) return store.dispatch({ type: "DISMISS_TITLE_CELEBRATION" });
+  if (t("[data-premium-join]"))   return store.dispatch({ type: "SET_PREMIUM", value: true });
+  if (t("[data-premium-cancel]")) return store.dispatch({ type: "SET_PREMIUM", value: false });
+  if (t("[data-buy-item]"))       return store.dispatch({ type: "BUY_SHOP_ITEM", itemId: t("[data-buy-item]").dataset.buyItem });
+  if (t("[data-equip-deco]"))     return store.dispatch({ type: "EQUIP_DECORATION", itemId: t("[data-equip-deco]").dataset.equipDeco });
+  if (t("[data-toggle-notification]")) return store.dispatch({ type: "TOGGLE_NOTIFICATION", key: t("[data-toggle-notification]").dataset.toggleNotification });
+  if (t("[data-digest-time]"))    return store.dispatch({ type: "SET_DIGEST_TIME", value: t("[data-digest-time]").dataset.digestTime });
+  if (t("[data-toggle-bg]"))      return store.dispatch({ type: "TOGGLE_BG_SCAN", key: t("[data-toggle-bg]").dataset.toggleBg });
+  if (t("[data-bg-mode]"))        return store.dispatch({ type: "SET_BG_SCAN_MODE", value: t("[data-bg-mode]").dataset.bgMode });
+  if (t("[data-link-service]"))   return store.dispatch({ type: "TOGGLE_SERVICE_LINK", service: t("[data-link-service]").dataset.linkService });
+  if (t("[data-open-friend]"))  return store.dispatch({ type: "OPEN_FRIEND", userId: t("[data-open-friend]").dataset.openFriend });
+  if (t("[data-open-artist]"))  return store.dispatch({ type: "OPEN_ARTIST", artistId: t("[data-open-artist]").dataset.openArtist });
+  if (t("[data-toggle-oshi]"))  return store.dispatch({ type: "TOGGLE_OSHI_TRACK", trackId: t("[data-toggle-oshi]").dataset.toggleOshi });
 });
 
 document.querySelector("#close-modal").addEventListener("click",  () => store.dispatch({ type: "CLOSE_AD_MODAL" }));
@@ -1488,19 +2139,16 @@ function localSearchTracks(q) {
   if (!q) return Object.values(seedData.tracks).map((t) => ({
     trackId:    t.id,
     title:      t.title,
-    artistName: seedData.artists[t.artistId]?.name ?? "",
+    artistName: t.artistName,
     color:      t.color,
   }));
   const lq = q.toLowerCase();
   return Object.values(seedData.tracks)
-    .filter((t) => {
-      const artistName = seedData.artists[t.artistId]?.name ?? "";
-      return t.title.toLowerCase().includes(lq) || artistName.toLowerCase().includes(lq);
-    })
+    .filter((t) => t.title.toLowerCase().includes(lq) || t.artistName.toLowerCase().includes(lq))
     .map((t) => ({
       trackId:    t.id,
       title:      t.title,
-      artistName: seedData.artists[t.artistId]?.name ?? "",
+      artistName: t.artistName,
       color:      t.color,
     }));
 }

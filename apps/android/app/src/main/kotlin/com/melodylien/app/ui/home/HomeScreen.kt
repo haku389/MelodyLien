@@ -64,7 +64,7 @@ fun HomeScreen(vm: AppViewModel) {
             val hero = homeState.heroTrack
             MlCard {
                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ArtBlock(color = hero?.color ?: "violet", modifier = Modifier.size(132.dp))
+                    ArtBlock(color = hero?.color ?: "violet", thumbnailUrl = hero?.artworkUrl, modifier = Modifier.size(132.dp))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("今日のメロディ", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = MelodyColors.Muted)
                         Text(hero?.displayTitle ?: "—", fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -173,7 +173,7 @@ private fun StatTile(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 private fun SongTile(track: Track, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(modifier = modifier.clickable(onClick = onClick)) {
-        ArtBlock(color = track.color, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+        ArtBlock(color = track.color, thumbnailUrl = track.artworkUrl, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
         Spacer(Modifier.height(8.dp))
         Text(if (track.isUnlocked) track.title ?: "—" else "未解放メロディ",
             fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)

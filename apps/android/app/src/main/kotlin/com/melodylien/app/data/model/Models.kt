@@ -33,11 +33,22 @@ data class Track(
     val maskedLabel: String? = null,
     val choices: List<String> = emptyList(),
     val ownedPieces: List<Int> = emptyList(),
+    val youtubeVideoId: String? = null,
 ) {
     val displayTitle: String get() = title ?: maskedLabel ?: "未解放メロディ"
     val displayArtist: String get() = artistName ?: "???"
     val isComplete: Boolean get() = ownedPieces.size >= pieceCount
     val progress: Float get() = if (pieceCount == 0) 0f else ownedPieces.size.toFloat() / pieceCount
+
+    /** 実在する YouTube 動画のサムネイル URL（架空曲 official-* は除外）。
+     *  i.ytimg.com（画像CDN）の mqdefault は黒帯のないクリーンな 16:9。 */
+    val youtubeThumbnailUrl: String?
+        get() = youtubeVideoId
+            ?.takeIf { !it.startsWith("official-") }
+            ?.let { "https://i.ytimg.com/vi/$it/mqdefault.jpg" }
+
+    /** 解放済みの曲アートに使うサムネイル（未解放はネタバレ防止で表示しない） */
+    val artworkUrl: String? get() = if (isUnlocked) youtubeThumbnailUrl else null
 }
 
 // ─── Encounter ─────────────────────────────────

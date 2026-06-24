@@ -14,43 +14,41 @@ import (
 // ─── Seed data ─────────────────────────────────
 
 var artists = []model.Artist{
-	{ID: "artist_yoasobi",  Name: "YOASOBI"},
-	{ID: "artist_niziu",    Name: "NiziU"},
-	{ID: "artist_yonezu",   Name: "米津玄師"},
-	{ID: "artist_ado",      Name: "Ado"},
-	{ID: "artist_vaundy",   Name: "Vaundy"},
-	{ID: "artist_milet",    Name: "milet"},
+	{ID: "artist_yoasobi", Name: "YOASOBI"},
+	{ID: "artist_niziu", Name: "NiziU"},
+	{ID: "artist_yonezu", Name: "米津玄師"},
+	{ID: "artist_ado", Name: "Ado"},
+	{ID: "artist_vaundy", Name: "Vaundy"},
+	{ID: "artist_milet", Name: "milet"},
 	{ID: "artist_macaroni", Name: "マカロニえんぴつ"},
-	{ID: "artist_higedan",  Name: "Official髭男dism"},
+	{ID: "artist_higedan", Name: "Official髭男dism"},
 }
 
 var tracks = []model.Track{
-	{ID: "track_sunset_drive", ArtistID: "artist_niziu",    Title: "Sunset Drive",    PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "sunset"},
-	{ID: "track_lemon",        ArtistID: "artist_yonezu",   Title: "Lemon",            PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet", Tone: "やさしい余韻",
+	{ID: "track_lemon", ArtistID: "artist_yonezu", Title: "Lemon", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet", Tone: "やさしい余韻",
 		Masks:   []string{"○津玄○ / L○○o○", "米津玄○ / Le○o○", "米津玄師 / Le○on"},
 		Choices: []string{"恋愛", "夏", "夜", "ドラマ"}},
-	{ID: "track_yoru",         ArtistID: "artist_yoasobi",  Title: "夜に駆ける",       PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "berry", Tone: "夜に聴きたい",
+	{ID: "track_yoru", ArtistID: "artist_yoasobi", Title: "夜に駆ける", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "berry", Tone: "夜に聴きたい",
 		Masks:   []string{"Y○○S○BI / ○に駆ける", "YO○SOBI / 夜に○ける", "YOASOBI / 夜に駆○る"},
 		Choices: []string{"夜", "疾走感", "小説", "出会い"}},
-	{ID: "track_show",         ArtistID: "artist_ado",      Title: "唱",               PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "magic"},
-	{ID: "track_kaiju",        ArtistID: "artist_vaundy",   Title: "怪獣の花唄",       PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "sunset"},
-	{ID: "track_anytime",      ArtistID: "artist_milet",    Title: "Anytime Anywhere", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet", Tone: "透明感",
+	{ID: "track_show", ArtistID: "artist_ado", Title: "唱", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "magic"},
+	{ID: "track_kaiju", ArtistID: "artist_vaundy", Title: "怪獣の花唄", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "sunset"},
+	{ID: "track_anytime", ArtistID: "artist_milet", Title: "Anytime Anywhere", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet", Tone: "透明感",
 		Masks:   []string{"m○ilet / A○○", "milet / Any○○", "milet / Anytime ○○"},
 		Choices: []string{"透明感", "旅", "祈り", "エンディング"}},
-	{ID: "track_blueberry",    ArtistID: "artist_macaroni", Title: "ブルーベリー",     PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "berry"},
-	{ID: "track_magic_hour",   ArtistID: "artist_higedan",  Title: "Magic Hour",       PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "magic"},
-	{ID: "track_halzion",      ArtistID: "artist_yoasobi",  Title: "ハルジオン",       PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet"},
+	{ID: "track_blueberry", ArtistID: "artist_macaroni", Title: "ブルーベリー", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "berry"},
+	{ID: "track_halzion", ArtistID: "artist_yoasobi", Title: "ハルジオン", PieceCount: 9, RewardCoins: 100, RewardExp: 50, Color: "violet"},
 }
 
-var dailyTrackIDs = []string{"track_sunset_drive", "track_blueberry", "track_magic_hour", "track_halzion"}
+var dailyTrackIDs = []string{"track_yoru", "track_blueberry", "track_kaiju", "track_halzion"}
 
 // ─── Store ─────────────────────────────────────
 
 type Store struct {
 	mu sync.RWMutex
 
-	users    map[string]*model.User
-	trackMap map[string]*model.Track
+	users     map[string]*model.User
+	trackMap  map[string]*model.Track
 	artistMap map[string]*model.Artist
 
 	// key: userID:trackID:pieceNumber
@@ -363,18 +361,19 @@ func (s *Store) TrackView(userID string, t *model.Track) model.TrackView {
 	owned := s.GetOwnedPieces(userID, t.ID)
 
 	view := model.TrackView{
-		ID:          t.ID,
-		ArtistID:    t.ArtistID,
-		PieceCount:  t.PieceCount,
-		RewardCoins: t.RewardCoins,
-		RewardExp:   t.RewardExp,
-		Color:       t.Color,
-		Tone:        t.Tone,
-		IsUnlocked:  unlocked,
-		HintLevel:   hintLevel,
-		AnswerReady: answerReady,
-		OwnedPieces: owned,
-		Choices:     []string{},
+		ID:           t.ID,
+		ArtistID:     t.ArtistID,
+		PieceCount:   t.PieceCount,
+		RewardCoins:  t.RewardCoins,
+		RewardExp:    t.RewardExp,
+		Color:        t.Color,
+		Tone:         t.Tone,
+		ThumbnailURL: t.ThumbnailURL,
+		IsUnlocked:   unlocked,
+		HintLevel:    hintLevel,
+		AnswerReady:  answerReady,
+		OwnedPieces:  owned,
+		Choices:      []string{},
 	}
 
 	if unlocked {

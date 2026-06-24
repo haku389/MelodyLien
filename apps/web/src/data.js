@@ -1,3 +1,42 @@
+// すれちがいクールタイム（再訪問可能になるまでの時間）
+export const COOLDOWN_MS = 6 * 60 * 60 * 1000;
+
+// 推し曲の設定上限（無料プラン / プレミアムプラン）
+export const OSHI_LIMIT = 3;
+export const OSHI_LIMIT_PREMIUM = 5;
+
+/** 現在のプランでの推し曲上限 */
+export function oshiLimit(state) {
+  return state.premium ? OSHI_LIMIT_PREMIUM : OSHI_LIMIT;
+}
+
+// プレミアムプラン（プロトタイプ用の表示価格）
+export const PREMIUM_PRICE_LABEL = "¥480 / 月";
+
+// ショップ商品（メロディコインの使い道）
+// type: ticket=ヒントチケット / piece=ランダムピース / decoration=アバター装飾（買い切り・装備可）
+export const SHOP_ITEMS = [
+  { id: "shop_hint_ticket",  icon: "🎟️", name: "ヒントチケット",   desc: "広告なしでヒントを1回解放できます",             price: 15,  type: "ticket" },
+  { id: "shop_random_piece", icon: "🎲", name: "ランダムピース",   desc: "未完成のパズルからランダムで1ピース獲得します", price: 20,  type: "piece" },
+  { id: "shop_deco_hat",     icon: "🎩", name: "シルクハット",     desc: "アバターに装備できる装飾です",                   price: 50,  type: "decoration" },
+  { id: "shop_deco_ribbon",  icon: "🎀", name: "リボン",           desc: "アバターに装備できる装飾です",                   price: 50,  type: "decoration" },
+  { id: "shop_deco_crown",   icon: "👑", name: "クラウン",         desc: "アバターに装備できる装飾です",                   price: 100, type: "decoration" },
+];
+
+// 新規ピース1枚あたりの獲得経験値（パズル完成時は track.rewardExp を追加）
+export const PIECE_EXP = 5;
+
+/** 累計経験値からレベルを算出（Lv.L → L+1 へは L×100 exp 必要） */
+export function levelFromExp(exp) {
+  let level = 1;
+  let rest = Math.max(exp || 0, 0);
+  while (rest >= level * 100) {
+    rest -= level * 100;
+    level += 1;
+  }
+  return { level, current: rest, next: level * 100 };
+}
+
 export const ASSETS = {
   mascot: "./assets/mascot.svg",
   coin: "./assets/melody-coin.svg",
@@ -20,8 +59,6 @@ export const PUZZLE_ASSETS = {
     track_anytime:      "./assets/puzzles/track_anytime/",      // ✓ 本番 r105CzDvoo0
     track_blueberry:    "./assets/puzzles/track_blueberry/",    // ✓ 本番 Euf1-3WRino
     track_halzion:      "./assets/puzzles/track_halzion/",      // ✓ 本番 kzdJkT4kp-A
-    track_sunset_drive: "./assets/puzzles/track_sunset_drive/", // ★ 架空曲・greenback
-    track_magic_hour:   "./assets/puzzles/track_magic_hour/",   // ★ 架空曲・greenback
   },
 };
 
@@ -141,15 +178,13 @@ export const seedData = {
   user: {
     id: "user_mia",
     name: "Mia",
-    level: 1,
-    levelProgress: 0,
     coins: 0,
   },
   collectionLabels: ["曲パズル", "アーティスト", "プレイリスト"],
   mission: {
     label: "デイリー",
-    current: 0,
     target: 5,
+    rewardCoins: 10,
   },
   // pieceCount: 24（6列×4行）が仕様。所持ピースはプロトタイプ用サンプル値。
   tracks: {
@@ -167,20 +202,6 @@ export const seedData = {
       youtubeVideoId: "TQ8WlA2GXbk",
       chorusStart: 57,
       thumbnailUrl: "./assets/puzzles/pretender/preview.png",
-    },
-    track_sunset_drive: {
-      id: "track_sunset_drive",
-      title: "Sunset Drive",
-      artistId: "artist_niziu",
-      artistName: "Niziu",
-      pieceCount: 24,
-      ownedPieces: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16],
-      rewardCoins: 100,
-      rewardExp: 50,
-      color: "sunset",
-      isUnlocked: true,
-      youtubeVideoId: "official-sunset-drive", // 架空曲・実IDなし
-      thumbnailUrl: "./assets/puzzles/track_sunset_drive/preview.png",
     },
     track_lemon: {
       id: "track_lemon",
@@ -281,20 +302,6 @@ export const seedData = {
       chorusStart: 55,
       thumbnailUrl: "./assets/puzzles/track_blueberry/preview.png",
     },
-    track_magic_hour: {
-      id: "track_magic_hour",
-      title: "Magic Hour",
-      artistId: "artist_higedan",
-      artistName: "Official髭男dism",
-      pieceCount: 24,
-      ownedPieces: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22],
-      rewardCoins: 100,
-      rewardExp: 50,
-      color: "magic",
-      isUnlocked: true,
-      youtubeVideoId: "official-magic-hour", // 架空曲・実IDなし
-      thumbnailUrl: "./assets/puzzles/track_magic_hour/preview.png",
-    },
     track_halzion: {
       id: "track_halzion",
       title: "ハルジオン",
@@ -311,16 +318,18 @@ export const seedData = {
       thumbnailUrl: "./assets/puzzles/track_halzion/preview.png",
     },
   },
-  artists: {
-    artist_yoasobi: {
-      id: "artist_yoasobi",
-      name: "YOASOBI",
-      completedTrackPuzzles: 12,
-      totalTrackPuzzles: 18,
-      artistPuzzleProgress: 60,
-      featuredTrackIds: ["track_yoru", "track_halzion"],
-    },
-  },
+  // 称号定義（type: puzzles=完成曲数 / artists=全曲完成アーティスト数 / friends=フレンド数 / unlocks=曲名解放数 / mission=デイリーミッション達成）
+  // target: "all" は全曲数を表す。rewardCoins / rewardExp は獲得時の常設リワード
+  titles: [
+    { id: "title_first_puzzle",  icon: "🧩", name: "はじめてのひとかけら", description: "曲パズルを1曲完成させる",             type: "puzzles", target: 1,     rewardCoins: 30,  rewardExp: 30 },
+    { id: "title_three_puzzles", icon: "🎼", name: "メロディコレクター",   description: "曲パズルを3曲完成させる",             type: "puzzles", target: 3,     rewardCoins: 50,  rewardExp: 50 },
+    { id: "title_all_puzzles",   icon: "👑", name: "パズルマエストロ",     description: "全曲のパズルを完成させる",            type: "puzzles", target: "all", rewardCoins: 200, rewardExp: 200 },
+    { id: "title_first_artist",  icon: "🌟", name: "推しマスター",         description: "1組のアーティストの全曲を完成させる", type: "artists", target: 1,     rewardCoins: 100, rewardExp: 100 },
+    { id: "title_first_friend",  icon: "🤝", name: "はじめてのフレンド",   description: "フレンドを1人つくる",                 type: "friends", target: 1,     rewardCoins: 30,  rewardExp: 30 },
+    { id: "title_three_friends", icon: "🎶", name: "音楽の輪",             description: "フレンドを3人つくる",                 type: "friends", target: 3,     rewardCoins: 50,  rewardExp: 50 },
+    { id: "title_unlock_five",   icon: "🔓", name: "名曲ハンター",         description: "曲名を5曲解放する",                   type: "unlocks", target: 5,     rewardCoins: 50,  rewardExp: 50 },
+    { id: "title_daily_mission", icon: "📅", name: "今日のがんばり屋",     description: "デイリーミッションを達成する",        type: "mission", target: 1,     rewardCoins: 20,  rewardExp: 20 },
+  ],
   encounters: {
     encounter_today_001: {
       id: "encounter_today_001",
@@ -403,7 +412,7 @@ export const seedData = {
     encounterId: "encounter_today_001",
     dateLabel: "2026年6月4日",
     title: "今日のメロディ",
-    trackIds: ["track_sunset_drive", "track_blueberry", "track_magic_hour", "track_halzion"],
+    trackIds: ["track_show", "track_blueberry", "track_kaiju", "track_halzion"],
   },
 };
 
@@ -437,13 +446,27 @@ export function initialAppState() {
       }),
     ),
     listenLaterTrackIds: [],
-    recentlyAddedTrackIds: ["track_sunset_drive", "track_blueberry", "track_magic_hour"],
+    recentlyAddedTrackIds: ["track_show", "track_blueberry", "track_kaiju"],
     coins: seedData.user.coins,
+    exp: 0, // 累計経験値（levelFromExp でレベル算出）
     encounterCooldowns: {}, // { [encounterId]: lastPickTimestamp }
     puzzleCompleteTrackId: null, // 完成演出表示中のトラックID
+    pendingTitleCelebrations: [], // 獲得演出待ちの称号ID（先頭から順に表示）
     pendingFriendAdd: null, // { userId, userName } — ピース取得後のフレンド申請待ち
     friends: [], // [{ userId, userName, addedAt, exchangeCount }]
+    selectedFriendUserId: null, // フレンド詳細画面で表示中のフレンド
+    selectedArtistId: null, // アーティスト詳細画面で表示中のアーティストID
     previewPlays: {}, // { [trackId]: { date: "YYYY-MM-DD", count } } — 1曲1日3回まで
+    dailyMission: { date: todayKey(), progress: 0, claimed: false }, // ピース獲得数で進行（日付単位リセット）
+    oshiTrackIds: [], // 推し曲設定（解放済みの曲から最大 oshiLimit(state) 曲）
+    premium: false, // プレミアムプラン加入状態（プロトタイプ・模擬決済）
+    hintTickets: 0, // ショップで購入できるヒントチケット（広告の代わりに消費）
+    ownedDecorations: [], // 購入済みのアバター装飾（SHOP_ITEMS の id）
+    equippedDecoration: null, // 装備中の装飾 id（null=なし）
+    notificationSettings: { immediate: true, digest: false, digestTime: "20:00", encounter: true, mission: true },
+    linkedServices: { spotify: false, appleMusic: false, youtubeMusic: false }, // 音楽サービス連携（模擬）
+    backgroundScan: { enabled: true, mode: "balanced", nightPause: false }, // バックグラウンド検知（mode: powersave/balanced/performance）
+    oshiDeliveries: {}, // { [userId]: 届けた推し曲の累計回数 } — すれちがい時に自分の推し曲を相手に届ける
     authUser: undefined, // undefined=セッション確認中 / null=未ログイン / { id, email, isGuest, provider }
     toast: null,
   };
@@ -451,6 +474,12 @@ export function initialAppState() {
 
 export function formatNumber(value) {
   return new Intl.NumberFormat("ja-JP").format(value);
+}
+
+/** 今日の日付キー（YYYY-MM-DD・日付単位のリセット判定に使用） */
+export function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /** アーティスト名は常に表示、曲名のみマスク（? × 文字数） */

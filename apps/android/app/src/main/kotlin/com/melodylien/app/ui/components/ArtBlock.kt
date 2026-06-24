@@ -11,8 +11,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.melodylien.app.ui.theme.MelodyColors
 
 @Composable
@@ -20,6 +22,7 @@ fun ArtBlock(
     color: String,
     modifier: Modifier = Modifier,
     cornerRadius: Dp = 18.dp,
+    thumbnailUrl: String? = null,
 ) {
     val colors = MelodyColors.artColors(color)
     Box(
@@ -30,6 +33,15 @@ fun ArtBlock(
         // Puzzle grid overlay
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawPuzzleGrid(this)
+        }
+        // YouTube サムネイル（解放済みの曲のみ）
+        if (thumbnailUrl != null) {
+            AsyncImage(
+                model = thumbnailUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }

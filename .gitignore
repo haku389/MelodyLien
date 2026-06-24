@@ -1,0 +1,20 @@
+# ── macOS ──
+.DS_Store
+
+# ── Xcode / XcodeGen ──
+# project.yml が真実源。.xcodeproj は `xcodegen generate` で再生成する生成物。
+apps/ios/MelodyLien.xcodeproj/
+**/xcuserdata/
+**/*.xcworkspace/xcuserdata/
+DerivedData/
+build/
+
+# ── Go ──
+/dist/
+*.test
+
+# ── Node ──
+node_modules/
+
+# ── Misc ──
+*.log

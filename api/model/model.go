@@ -23,15 +23,16 @@ type Artist struct {
 // ─── Track ─────────────────────────────────────
 
 type Track struct {
-	ID            string   `json:"id"`
-	ArtistID      string   `json:"artistId"`
-	Title         string   `json:"title"`
-	PieceCount    int      `json:"pieceCount"`
-	RewardCoins   int      `json:"rewardCoins"`
-	RewardExp     int      `json:"rewardExp"`
-	Color         string   `json:"color"`
-	Tone          string   `json:"tone,omitempty"`
-	YoutubeID     string   `json:"youtubeId,omitempty"`
+	ID           string `json:"id"`
+	ArtistID     string `json:"artistId"`
+	Title        string `json:"title"`
+	PieceCount   int    `json:"pieceCount"`
+	RewardCoins  int    `json:"rewardCoins"`
+	RewardExp    int    `json:"rewardExp"`
+	Color        string `json:"color"`
+	Tone         string `json:"tone,omitempty"`
+	YoutubeID    string `json:"youtubeId,omitempty"`
+	ThumbnailURL string `json:"thumbnailUrl,omitempty"`
 	// 内部保持用（APIレスポンスには含めない）
 	Masks   []string `json:"-"`
 	Choices []string `json:"-"`
@@ -39,31 +40,32 @@ type Track struct {
 
 // TrackView はユーザーごとの状態を含むAPIレスポンス用構造体
 type TrackView struct {
-	ID          string   `json:"id"`
-	ArtistID    string   `json:"artistId"`
-	Title       *string  `json:"title"`       // 未解放は null
-	ArtistName  *string  `json:"artistName"`  // 未解放は null
-	PieceCount  int      `json:"pieceCount"`
-	RewardCoins int      `json:"rewardCoins"`
-	RewardExp   int      `json:"rewardExp"`
-	Color       string   `json:"color"`
-	Tone        string   `json:"tone,omitempty"`
-	IsUnlocked  bool     `json:"isUnlocked"`
-	HintLevel   int      `json:"hintLevel"`
-	AnswerReady bool     `json:"answerReady"`
-	MaskedLabel *string  `json:"maskedLabel"` // ヒントレベルに応じた伏せ字
-	Choices     []string `json:"choices"`     // hint level >= 2 で公開
-	OwnedPieces []int    `json:"ownedPieces"`
+	ID           string   `json:"id"`
+	ArtistID     string   `json:"artistId"`
+	Title        *string  `json:"title"`      // 未解放は null
+	ArtistName   *string  `json:"artistName"` // 未解放は null
+	PieceCount   int      `json:"pieceCount"`
+	RewardCoins  int      `json:"rewardCoins"`
+	RewardExp    int      `json:"rewardExp"`
+	Color        string   `json:"color"`
+	Tone         string   `json:"tone,omitempty"`
+	ThumbnailURL string   `json:"thumbnailUrl,omitempty"` // パズル画像（公式MVサムネ等）。未解放でも表示する
+	IsUnlocked   bool     `json:"isUnlocked"`
+	HintLevel    int      `json:"hintLevel"`
+	AnswerReady  bool     `json:"answerReady"`
+	MaskedLabel  *string  `json:"maskedLabel"` // ヒントレベルに応じた伏せ字
+	Choices      []string `json:"choices"`     // hint level >= 2 で公開
+	OwnedPieces  []int    `json:"ownedPieces"`
 }
 
 // ─── Encounter ─────────────────────────────────
 
 type Encounter struct {
-	ID            string       `json:"id"`
-	LocationLabel string       `json:"locationLabel"`
-	RewardCoins   int          `json:"rewardCoins"`
-	ExpiresAt     time.Time    `json:"expiresAt"`
-	Candidates    []Candidate  `json:"candidates"`
+	ID            string      `json:"id"`
+	LocationLabel string      `json:"locationLabel"`
+	RewardCoins   int         `json:"rewardCoins"`
+	ExpiresAt     time.Time   `json:"expiresAt"`
+	Candidates    []Candidate `json:"candidates"`
 }
 
 type Candidate struct {

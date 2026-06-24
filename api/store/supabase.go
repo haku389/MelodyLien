@@ -30,6 +30,7 @@ type supabaseTrack struct {
 	ArtistID       string `json:"artist_id"`
 	Title          string `json:"title"`
 	YoutubeVideoID string `json:"youtube_video_id"`
+	ThumbnailURL   string `json:"thumbnail_url"`
 	PieceCount     int    `json:"piece_count"`
 	ChorusStart    int    `json:"chorus_start"`
 	RewardCoins    int    `json:"reward_coins"`
@@ -86,14 +87,15 @@ func (s *Store) LoadFromSupabase(baseURL, anonKey string) error {
 	order := make([]model.Track, 0, len(sbTracks))
 	for _, t := range sbTracks {
 		track := model.Track{
-			ID:          t.ID,
-			ArtistID:    t.ArtistID,
-			Title:       t.Title,
-			PieceCount:  t.PieceCount,
-			RewardCoins: t.RewardCoins,
-			RewardExp:   t.RewardExp,
-			Color:       t.Color,
-			YoutubeID:   t.YoutubeVideoID,
+			ID:           t.ID,
+			ArtistID:     t.ArtistID,
+			Title:        t.Title,
+			PieceCount:   t.PieceCount,
+			RewardCoins:  t.RewardCoins,
+			RewardExp:    t.RewardExp,
+			Color:        t.Color,
+			YoutubeID:    t.YoutubeVideoID,
+			ThumbnailURL: t.ThumbnailURL,
 		}
 		// 埋め込みシードのヒント情報（伏せ字・4択）はそのまま引き継ぐ
 		for i := range tracks {

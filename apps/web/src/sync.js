@@ -158,6 +158,16 @@ export function syncAfterAction(userId, prevState, nextState, action) {
         )
         .then(({ error }) => error && console.error("[sync] cooldown:", error));
     }
+
+    // 既フレンドとの再交換で exchange_count が増えた場合はリモートへ反映
+    const exchanged = (nextState.friends || []).find((f) =>
+      (prevState.friends || []).some((pf) => pf.userName === f.userName && pf.exchangeCount !== f.exchangeCount));
+    if (exchanged) {
+      supabase.from("friendships")
+        .update({ exchange_count: exchanged.exchangeCount })
+        .eq("user_id", userId).eq("friend_name", exchanged.userName)
+        .then(({ error }) => error && console.error("[sync] exchange:", error));
+    }
     return;
   }
 

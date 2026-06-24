@@ -10,6 +10,7 @@ struct MelodyLienApp: App {
             ContentView()
                 .environmentObject(vm)
                 .task { await vm.loadAll() }
+                .preferredColorScheme(.light)
         }
     }
 }

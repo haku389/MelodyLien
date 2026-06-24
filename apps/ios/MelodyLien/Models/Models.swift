@@ -28,26 +28,44 @@ struct Track: Codable, Identifiable {
     let color: String
     let tone: String?
 
-    // ユーザー状態（APIから返る）
-    var title: String?          // 未解放は nil
-    var artistName: String?     // 未解放は nil
+    var title: String?
+    var artistName: String?
     var isUnlocked: Bool
-    var hintLevel: Int          // 0 / 1 / 2
+    var hintLevel: Int
     var answerReady: Bool
-    var maskedLabel: String?    // hintLevel に応じた伏せ字
-    var choices: [String]       // hintLevel >= 2 で公開
+    var maskedLabel: String?
+    var choices: [String]
     var ownedPieces: [Int]
+    var youtubeVideoId: String?
+    var chorusStart: Int? = nil   // サビ位置（秒）。30秒試聴の開始位置
+    var thumbnailUrl: String? = nil   // API(DB)由来のサムネイルURL（公式MV等から生成済み）。seed では nil
 
-    var displayTitle: String {
-        title ?? maskedLabel ?? "未解放メロディ"
+    var displayTitle: String { title ?? maskedLabel ?? "未解放メロディ" }
+    var displayArtist: String { artistName ?? "???" }
+    var isComplete: Bool { ownedPieces.count >= pieceCount }
+
+    /// 実在する YouTube 動画を持つか（30秒試聴・YouTube確認の可否判定に使う）。
+    /// 架空曲（`youtubeVideoId == nil` または `official-*`）は false。
+    var hasYouTubeVideo: Bool {
+        guard let id = youtubeVideoId, !id.hasPrefix("official-") else { return false }
+        return true
     }
 
-    var displayArtist: String {
-        artistName ?? "???"
+    /// アプリに同梱したパズルプレビュー画像（Web版 assets/puzzles/<id>/preview.png 由来）。
+    /// XcodeGen がバンドル直下にフラット化するため subdirectory なしで検索する。
+    var bundledThumbnailURL: URL? {
+        Bundle.main.url(forResource: id, withExtension: "png")
     }
 
-    var isComplete: Bool {
-        ownedPieces.count >= pieceCount
+    /// 表示用サムネイル URL。優先順位は次のとおり:
+    ///  1) API(DB/CDN)由来の thumbnailUrl（公式MVの maxres など。将来の配信元）
+    ///  2) アプリ同梱画像（オフライン用フォールバック）
+    ///  3) YouTube 画像CDN（mqdefault）から直接（最後の保険）
+    var thumbnailURL: URL? {
+        if let remote = thumbnailUrl, let u = URL(string: remote) { return u }
+        if let local = bundledThumbnailURL { return local }
+        guard let id = youtubeVideoId, !id.hasPrefix("official-") else { return nil }
+        return URL(string: "https://i.ytimg.com/vi/\(id)/mqdefault.jpg")
     }
 }
 
@@ -56,6 +74,8 @@ struct Track: Codable, Identifiable {
 struct Encounter: Codable, Identifiable {
     let id: String
     let locationLabel: String
+    let fromUserName: String
+    let fromUserId: String
     let rewardCoins: Int
     let expiresAt: Date
     let candidates: [Candidate]
@@ -68,6 +88,7 @@ struct Candidate: Codable, Identifiable {
     let sourceSlot: String
     let rarity: Int
     let sortOrder: Int
+    var availablePieces: [Int]
 }
 
 // MARK: - Playlist
@@ -93,6 +114,7 @@ struct Mission: Codable {
     let label: String
     var current: Int
     let target: Int
+    let rewardCoins: Int
 
     var progress: Double {
         guard target > 0 else { return 0 }
@@ -110,12 +132,148 @@ struct CollectionSummary: Codable {
     let playlists: Int
 }
 
+// MARK: - Friend
+
+struct Friend: Identifiable, Codable {
+    let userId: String
+    var id: String { userId }
+    let userName: String
+    let locationLabel: String
+    var exchangeCount: Int
+    let addedAt: Date
+}
+
+// MARK: - Persistence (UserDefaults に保存するゲーム進行)
+
+/// トラックごとの可変進行（静的フィールドは seed 側を使うため保存しない）
+struct TrackProgress: Codable {
+    let ownedPieces: [Int]
+    let isUnlocked: Bool
+    let hintLevel: Int
+    let answerReady: Bool
+    let title: String?
+    let artistName: String?
+}
+
+/// 端末に保存するセーブデータ全体。
+/// 項目追加で旧セーブが壊れない（=進行リセットしない）よう、欠損キーは
+/// デフォルト値で補完するトレラントなデコードにしている。
+struct SaveState: Codable {
+    var trackProgress: [String: TrackProgress] = [:]
+    var coins: Int = 240
+    var exp: Int = 0
+    var oshiTrackIds: [String] = []
+    var unlockedTrackIds: [String] = []
+    var friends: [Friend] = []
+    var premium: Bool = false
+    var linkedServices: [String: Bool] = [:]
+    var hintTickets: Int = 0
+    var ownedDecorations: [String] = []
+    var equippedDecoration: String? = nil
+    var notifyImmediate: Bool = true
+    var notifyDigest: Bool = false
+    var notifyDigestTime: String = "20:00"
+    var notifyEncounter: Bool = true
+    var notifyMission: Bool = true
+    var bgScanEnabled: Bool = true
+    var bgScanMode: String = "balanced"
+    var bgNightPause: Bool = false
+    var encounterCooldowns: [String: Date] = [:]
+    var missionCurrent: Int? = nil
+    var previewPlays: [String: PreviewRecord] = [:]
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        var d = SaveState()
+        d.trackProgress     = (try? c.decode([String: TrackProgress].self, forKey: .trackProgress)) ?? d.trackProgress
+        d.coins             = (try? c.decode(Int.self, forKey: .coins)) ?? d.coins
+        d.exp               = (try? c.decode(Int.self, forKey: .exp)) ?? d.exp
+        d.oshiTrackIds      = (try? c.decode([String].self, forKey: .oshiTrackIds)) ?? d.oshiTrackIds
+        d.unlockedTrackIds  = (try? c.decode([String].self, forKey: .unlockedTrackIds)) ?? d.unlockedTrackIds
+        d.friends           = (try? c.decode([Friend].self, forKey: .friends)) ?? d.friends
+        d.premium           = (try? c.decode(Bool.self, forKey: .premium)) ?? d.premium
+        d.linkedServices    = (try? c.decode([String: Bool].self, forKey: .linkedServices)) ?? d.linkedServices
+        d.hintTickets       = (try? c.decode(Int.self, forKey: .hintTickets)) ?? d.hintTickets
+        d.ownedDecorations  = (try? c.decode([String].self, forKey: .ownedDecorations)) ?? d.ownedDecorations
+        d.equippedDecoration = (try? c.decode(String?.self, forKey: .equippedDecoration)) ?? d.equippedDecoration
+        d.notifyImmediate   = (try? c.decode(Bool.self, forKey: .notifyImmediate)) ?? d.notifyImmediate
+        d.notifyDigest      = (try? c.decode(Bool.self, forKey: .notifyDigest)) ?? d.notifyDigest
+        d.notifyDigestTime  = (try? c.decode(String.self, forKey: .notifyDigestTime)) ?? d.notifyDigestTime
+        d.notifyEncounter   = (try? c.decode(Bool.self, forKey: .notifyEncounter)) ?? d.notifyEncounter
+        d.notifyMission     = (try? c.decode(Bool.self, forKey: .notifyMission)) ?? d.notifyMission
+        d.bgScanEnabled     = (try? c.decode(Bool.self, forKey: .bgScanEnabled)) ?? d.bgScanEnabled
+        d.bgScanMode        = (try? c.decode(String.self, forKey: .bgScanMode)) ?? d.bgScanMode
+        d.bgNightPause      = (try? c.decode(Bool.self, forKey: .bgNightPause)) ?? d.bgNightPause
+        d.encounterCooldowns = (try? c.decode([String: Date].self, forKey: .encounterCooldowns)) ?? d.encounterCooldowns
+        d.missionCurrent    = (try? c.decode(Int?.self, forKey: .missionCurrent)) ?? d.missionCurrent
+        d.previewPlays      = (try? c.decode([String: PreviewRecord].self, forKey: .previewPlays)) ?? d.previewPlays
+        self = d
+    }
+}
+
+/// ピース取得直後に表示するフレンド申請カードの対象
+struct PendingFriend: Equatable {
+    let userId: String
+    let userName: String
+    let locationLabel: String
+}
+
+/// 試聴回数の記録（1曲1日3回まで）
+struct PreviewRecord: Codable {
+    let date: String   // "yyyy-MM-dd"
+    var count: Int
+}
+
+// MARK: - Title / Achievement
+
+struct TitleItem: Identifiable {
+    let id: String
+    let icon: String
+    let name: String
+    let description: String
+    let rewardCoins: Int
+    let rewardExp: Int
+    let conditionType: String   // "puzzles" | "artists" | "friends" | "unlocks" | "mission"
+    let conditionCount: Int
+}
+
+// MARK: - Artist Group (computed locally)
+
+struct ArtistGroup: Identifiable {
+    let id: String
+    let name: String
+    var tracks: [Track]
+    var completed: Int { tracks.filter { $0.isComplete }.count }
+}
+
+// MARK: - Shop Item
+
+struct ShopItem: Identifiable {
+    let id: String
+    let icon: String
+    let name: String
+    let description: String
+    let price: Int
+    let type: String    // "ticket" | "piece" | "decoration"
+}
+
+// MARK: - Ranking Row
+
+struct RankRow: Identifiable {
+    let id = UUID()
+    let name: String
+    let sub: String
+    let count: Int
+    let isMe: Bool
+}
+
 // MARK: - BLE
 
-/// 近くで検出したユーザーの識別情報
 struct NearbyUser: Identifiable {
-    let id: String          // UUID (BLE Peripheral ID)
-    let userId: String      // サーバー側ユーザーID
-    let rssi: Int           // 信号強度
+    let id: String
+    let userId: String
+    let rssi: Int
     let detectedAt: Date
 }

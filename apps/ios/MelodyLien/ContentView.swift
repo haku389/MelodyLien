@@ -5,51 +5,45 @@ struct ContentView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // Background
-            LinearGradient(
-                colors: [Color(hex: "fffdfb"), Color(hex: "f9f1ff")],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
+            Color(hex: "F5F0FF").ignoresSafeArea()
+
+            NavigationStack(path: $vm.navigationStack) {
+                tabContent
+                    .navigationDestination(for: Screen.self) { screen in
+                        screenView(for: screen)
+                            .environmentObject(vm)
+                    }
+            }
             .ignoresSafeArea()
 
-            // Main content
-            Group {
-                switch vm.activeTab {
-                case .home:
-                    NavigationStack(path: $vm.navigationStack) {
-                        HomeView()
-                            .navigationDestination(for: Screen.self) { screen in
-                                screenView(for: screen)
-                            }
-                    }
-                case .exchange:
-                    ExchangeView()
-                case .puzzle:
-                    if let hero = vm.heroTrack {
-                        PuzzleView(trackId: hero.id)
-                    } else {
-                        ProgressView()
-                    }
-                case .artist:
-                    Text("アーティスト画面 (実装予定)")
-                case .playlist:
-                    Text("プレイリスト画面 (実装予定)")
-                }
+            BottomNavBar().environmentObject(vm)
+
+            if let trackId = vm.puzzleCompleteTrackId {
+                PuzzleCompleteOverlay(trackId: trackId)
+                    .environmentObject(vm)
+                    .zIndex(10)
+            } else if let titleId = vm.pendingTitleCelebrations.first {
+                TitleCelebrationOverlay(titleId: titleId)
+                    .environmentObject(vm)
+                    .zIndex(10)
             }
-            .ignoresSafeArea(edges: .bottom)
 
-            // Bottom navigation
-            BottomNavBar()
+            if let previewId = vm.previewTrackId {
+                PreviewPlayerView(trackId: previewId)
+                    .environmentObject(vm)
+                    .zIndex(15)
+                    .transition(.opacity)
+            }
 
-            // Toast
             if let toast = vm.toast {
                 VStack {
                     Spacer()
                     Text(toast)
                         .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(.regularMaterial, in: Capsule())
+                        .background(Color(hex: "3D2F60").opacity(0.95), in: Capsule())
                         .shadow(radius: 8, y: 4)
                         .padding(.bottom, 90)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -60,14 +54,33 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private var tabContent: some View {
+        Group {
+            switch vm.activeTab {
+            case .home:       HomeView()
+            case .melody:     MelodyView()
+            case .collection: CollectionView()
+            case .ranking:    RankingView()
+            case .mypage:     MyPageView()
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    @ViewBuilder
     private func screenView(for screen: Screen) -> some View {
         switch screen {
-        case .home:              HomeView()
-        case .exchange:          ExchangeView()
-        case .mystery(let id):   MysteryView(trackId: id)
-        case .puzzle(let id):    PuzzleView(trackId: id)
-        case .artist(let id):    Text("アーティスト: \(id)")
-        case .playlist:          Text("プレイリスト")
+        case .mystery(let id):             MysteryView(trackId: id)
+        case .puzzle(let id):             PuzzleView(trackId: id)
+        case .pieceSelect(let encId, let candIdx): PieceSelectView(encounterId: encId, candidateIndex: candIdx)
+        case .artistDetail(let id):       ArtistDetailView(artistId: id)
+        case .friendDetail(let uid):      FriendDetailView(userId: uid)
+        case .playlist:                   PlaylistView()
+        case .friends:                    FriendsView()
+        case .premium:                    PremiumView()
+        case .shop:                       ShopView()
+        case .notifySettings:             NotifySettingsView()
+        case .bgSettings:                 BgSettingsView()
         }
     }
 }
@@ -82,6 +95,8 @@ struct BottomNavBar: View {
             ForEach(Tab.allCases, id: \.self) { tab in
                 Button {
                     vm.activeTab = tab
+                    vm.navigationStack = []
+                    vm.clearCollectPrompts()
                 } label: {
                     VStack(spacing: 2) {
                         Image(systemName: tab.icon)
@@ -89,18 +104,18 @@ struct BottomNavBar: View {
                         Text(tab.rawValue)
                             .font(.system(size: 9, weight: .heavy))
                     }
-                    .foregroundStyle(vm.activeTab == tab ? Color(hex: "8f6df4") : Color(hex: "817992"))
+                    .foregroundStyle(vm.activeTab == tab ? Color(hex: "7248E0") : Color(hex: "B8ACD6"))
                     .frame(maxWidth: .infinity, minHeight: 54)
-                    .background(vm.activeTab == tab ? Color(hex: "f0e9ff") : Color.clear,
+                    .background(vm.activeTab == tab ? Color(hex: "7248E0").opacity(0.12) : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 17))
                 }
             }
         }
         .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color(hex: "eadff3")))
-        .shadow(color: .black.opacity(0.1), radius: 16, y: 8)
+        .background(Color(hex: "FFFFFF").opacity(0.97), in: RoundedRectangle(cornerRadius: 24))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color(hex: "E0D8F7")))
+        .shadow(color: Color(hex: "7248E0").opacity(0.10), radius: 16, y: 8)
         .padding(.horizontal, 14)
-        .padding(.bottom, 14)
+        .padding(.bottom, 4)
     }
 }

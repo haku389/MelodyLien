@@ -42,11 +42,9 @@ var tracks = []model.Track{
 		Choices: []string{"透明感", "旅", "祈り", "エンディング"}},
 	{ID: "track_blueberry",    ArtistID: "artist_macaroni", Title: "ブルーベリー・ナイツ", PieceCount: 24, RewardCoins: 100, RewardExp: 50, Color: "berry", YoutubeID: "Euf1-3WRino"},
 	{ID: "track_halzion",      ArtistID: "artist_yoasobi",  Title: "ハルジオン",       PieceCount: 24, RewardCoins: 100, RewardExp: 50, Color: "violet", YoutubeID: "kzdJkT4kp-A"},
-	{ID: "track_magic_hour",   ArtistID: "artist_higedan",  Title: "Magic Hour",       PieceCount: 24, RewardCoins: 100, RewardExp: 50, Color: "magic"}, // 架空曲
-	{ID: "track_sunset_drive", ArtistID: "artist_niziu",    Title: "Sunset Drive",     PieceCount: 24, RewardCoins: 100, RewardExp: 50, Color: "sunset"}, // 架空曲
 }
 
-var dailyTrackIDs = []string{"track_sunset_drive", "track_blueberry", "track_magic_hour", "track_halzion"}
+var dailyTrackIDs = []string{"track_yoru", "track_blueberry", "track_kaiju", "track_halzion"}
 
 // ─── Store ─────────────────────────────────────
 

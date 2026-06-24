@@ -947,6 +947,8 @@ p {
   box-shadow: var(--shadow);
   font-size: 12px;
   font-weight: 900;
+  white-space: pre-line;
+  text-align: center;
 }
 
 /* ─── コレクション / ランキング 内部タブ ────────── */

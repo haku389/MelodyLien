@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import com.melodylien.app.ui.home.HomeScreen
+import com.melodylien.app.ui.puzzle.PuzzleScreen
 import com.melodylien.app.ui.theme.MelodyLienTheme
 import com.melodylien.app.viewmodel.AppViewModel
 import com.melodylien.app.viewmodel.Tab
@@ -44,7 +45,7 @@ fun MelodyLienApp(vm: AppViewModel) {
             when (activeTab) {
                 Tab.HOME     -> HomeScreen(vm)
                 Tab.EXCHANGE -> Text("ピース選択画面 (実装予定)", Modifier.align(Alignment.Center))
-                Tab.PUZZLE   -> Text("パズル画面 (実装予定)",   Modifier.align(Alignment.Center))
+                Tab.PUZZLE   -> PuzzleScreen(vm)
                 Tab.ARTIST   -> Text("アーティスト画面 (実装予定)", Modifier.align(Alignment.Center))
                 Tab.PLAYLIST -> Text("プレイリスト画面 (実装予定)", Modifier.align(Alignment.Center))
             }

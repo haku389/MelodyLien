@@ -5,9 +5,6 @@ struct AdConfirmModal: View {
     let onConfirm: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    private var title: String {
-        "広告を視聴してヒントを解放しますか？"
-    }
     private var rewardLabel: String {
         switch kind {
         case .hint1:  return "1つ目のヒントを見る"
@@ -20,7 +17,7 @@ struct AdConfirmModal: View {
         ZStack(alignment: .bottomLeading) {
             VStack(spacing: 0) {
                 Spacer().frame(height: 28)
-                Text(title)
+                Text("広告を視聴してヒントを解放しますか？")
                     .font(.system(size: 16, weight: .black))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 30)
@@ -29,50 +26,37 @@ struct AdConfirmModal: View {
                     .foregroundStyle(Color(hex: "817992"))
                     .padding(.top, 8)
 
-                // Reward box
                 VStack(spacing: 4) {
                     Text("解放内容")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(Color(hex: "817992"))
-                    Text(rewardLabel)
-                        .font(.system(size: 15, weight: .black))
+                        .font(.system(size: 12, weight: .heavy)).foregroundStyle(Color(hex: "817992"))
+                    Text(rewardLabel).font(.system(size: 15, weight: .black))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(14)
                 .background(Color(hex: "fff4df"), in: RoundedRectangle(cornerRadius: 18))
-                .padding(.top, 16)
-                .padding(.horizontal, 22)
+                .padding(.top, 16).padding(.horizontal, 22)
 
                 Text("※広告視聴後はキャンセルできません")
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(Color(hex: "817992"))
-                    .padding(.top, 10)
+                    .font(.system(size: 12, weight: .heavy)).foregroundStyle(Color(hex: "817992")).padding(.top, 10)
+                Text("（広告SDKは後日実装。現在は視聴を省略して解放します）")
+                    .font(.system(size: 10, weight: .heavy)).foregroundStyle(Color(hex: "b3a8c4"))
+                    .multilineTextAlignment(.center).padding(.top, 4).padding(.horizontal, 22)
 
-                // Buttons
                 HStack(spacing: 10) {
                     Button("いいえ") { dismiss() }
                         .buttonLabel(.secondary)
-                    Button("視聴する") {
-                        dismiss()
-                        onConfirm()
-                    }
-                    .buttonLabel(.primary)
+                    Button("視聴する") { dismiss(); onConfirm() }
+                        .buttonLabel(.primary)
                 }
-                .padding(.top, 14)
-                .padding(.horizontal, 22)
-                .padding(.bottom, 28)
+                .padding(.top, 14).padding(.horizontal, 22).padding(.bottom, 28)
             }
-            // Mascot
             Image(systemName: "figure.wave")
-                .font(.system(size: 60))
-                .foregroundStyle(Color(hex: "c0adff"))
-                .offset(x: -12, y: 6)
+                .font(.system(size: 60)).foregroundStyle(Color(hex: "c0adff")).offset(x: -12, y: 6)
         }
         .background(Color(hex: "fffefd"), in: RoundedRectangle(cornerRadius: 28))
         .overlay(
             Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .heavy))
+                Image(systemName: "xmark").font(.system(size: 16, weight: .heavy))
                     .frame(width: 36, height: 36)
                     .background(Color(hex: "f8f1ff"), in: Circle())
             }
