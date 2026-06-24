@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# deploy-cloudrun.sh — MelodyLien API を Google Cloud Run にデプロイする
+# deploy-cloudrun.sh — StreetMelody API を Google Cloud Run にデプロイする
 #
 # 前提（あなたの環境で一度だけ）:
 #   1) gcloud CLI をインストール: brew install --cask google-cloud-sdk
@@ -10,7 +10,7 @@
 #
 # 使い方（リポジトリ直下で）:
 #   bash scripts/deploy-cloudrun.sh
-#   # 任意で上書き: PROJECT_ID=xxx REGION=asia-northeast1 SERVICE=melodylien-api bash scripts/deploy-cloudrun.sh
+#   # 任意で上書き: PROJECT_ID=xxx REGION=asia-northeast1 SERVICE=streetmelody-api bash scripts/deploy-cloudrun.sh
 #
 # ※ `--source .` で Cloud Build がリモートでコンテナをビルドするため、ローカル docker は不要。
 #    ルートの Dockerfile が使われる。
@@ -18,7 +18,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-asia-northeast1}"          # Supabase が東京なので近接リージョン
-SERVICE="${SERVICE:-melodylien-api}"
+SERVICE="${SERVICE:-streetmelody-api}"
 
 # Supabase 接続（公開 anon キー。秘密ではない）
 SUPABASE_URL="${SUPABASE_URL:-https://wngtvdgzzlkajtbwsurc.supabase.co}"
@@ -50,5 +50,5 @@ URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region 
 echo "✅ デプロイ完了: $URL"
 echo "   動作確認: curl $URL/api/tracks"
 echo ""
-echo "次の手順: iOS のリリース用 baseURL（apps/ios/MelodyLien/Services/APIService.swift の #else 側）を"
-echo "          \"$URL/api\" に更新するか、カスタムドメイン api.melodylien.app を Cloud Run にマッピングしてください。"
+echo "次の手順: iOS のリリース用 baseURL（apps/ios/StreetMelody/Services/APIService.swift の #else 側）を"
+echo "          \"$URL/api\" に更新するか、カスタムドメイン api.streetmelody.app を Cloud Run にマッピングしてください。"

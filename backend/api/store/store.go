@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"melodylien/model"
+	"streetmelody/model"
 )
 
 // ─── Seed data ─────────────────────────────────

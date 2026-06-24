@@ -19,7 +19,7 @@ function renderAuth(state) {
       <div style="width:100%;max-width:360px;">
         <div style="text-align:center;margin-bottom:32px;">
           <div style="font-size:44px;margin-bottom:10px;">🎵</div>
-          <h1 style="color:#fff;font-size:24px;font-weight:950;letter-spacing:.04em;">MelodyLien</h1>
+          <h1 style="color:#fff;font-size:24px;font-weight:950;letter-spacing:.04em;">StreetMelody</h1>
           <p style="color:rgba(255,255,255,.55);font-size:12px;margin-top:8px;">すれちがいで音楽がつながる</p>
         </div>
 
@@ -1426,7 +1426,7 @@ function renderPremium(state) {
 
     <div class="section-block" style="padding:20px;text-align:center;background:linear-gradient(160deg,rgba(249,199,79,.12),rgba(143,109,244,.08));border:1px solid rgba(249,199,79,.35);">
       <div style="font-size:36px;margin-bottom:8px;">⭐</div>
-      <h2 style="font-size:16px;font-weight:950;">MelodyLien プレミアム</h2>
+      <h2 style="font-size:16px;font-weight:950;">StreetMelody プレミアム</h2>
       <p style="font-size:13px;font-weight:900;color:var(--primary);margin-top:6px;">${PREMIUM_PRICE_LABEL}</p>
       <p style="font-size:10px;color:var(--muted);margin-top:4px;">プロトタイプのため決済は行われません（模擬加入）</p>
     </div>

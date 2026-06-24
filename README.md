@@ -1,6 +1,6 @@
-# MelodyLien
+# StreetMelody
 
-MelodyLien（メロディリアン）は、近くにいる人の推し曲と出会い、曲やアーティストのピースを集める音楽交流アプリです。
+StreetMelody（ストリートメロディ）は、近くにいる人の推し曲と出会い、曲やアーティストのピースを集める音楽交流アプリです。
 
 このリポジトリには、Webプロトタイプ（静的SPA）・Go APIサーバー・Supabase連携を実装しています。
 
@@ -18,7 +18,7 @@ main.go / api/   Go APIサーバー（port 3001・Supabaseカタログ連携）
 docs/            実装記録
 ```
 
-バックエンド: Supabase プロジェクト `MelodyLien`（ap-northeast-1）
+バックエンド: Supabase プロジェクト `StreetMelody`（ap-northeast-1）
 — PostgreSQL（RLS有効・9テーブル）+ Supabase Auth
 
 ## 使い方

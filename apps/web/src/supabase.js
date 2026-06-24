@@ -1,7 +1,7 @@
 /**
  * supabase.js — Supabase Auth クライアント（B-2 認証最小構成）
  *
- * プロジェクト: MelodyLien (wngtvdgzzlkajtbwsurc / ap-northeast-1)
+ * プロジェクト: StreetMelody (wngtvdgzzlkajtbwsurc / ap-northeast-1)
  * ログイン方法: メール / Google / Apple / LINE / ゲスト（匿名）
  *
  * - Google / Apple: Supabase Auth の OAuth（ダッシュボードでプロバイダ設定が必要）
@@ -15,7 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 export const SUPABASE_URL = "https://wngtvdgzzlkajtbwsurc.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_oR41TcNHu-G9La0JHrnmWg_P8SfRts5";
 
-const LOCAL_GUEST_KEY = "melodylien.localGuest";
+const LOCAL_GUEST_KEY = "streetmelody.localGuest";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 

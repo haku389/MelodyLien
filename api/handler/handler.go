@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"melodylien/api/store"
+	"streetmelody/api/store"
 )
 
 const guestID = "user_guest"

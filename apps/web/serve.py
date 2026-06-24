@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MelodyLien 開発サーバー
+StreetMelody 開発サーバー
 - Cache-Control: no-store を全レスポンスに付与
 - index.html の <script> と JS ファイルの import 文にタイムスタンプを付与
   → ESModule キャッシュを完全に防ぐ

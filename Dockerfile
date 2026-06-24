@@ -1,4 +1,4 @@
-# MelodyLien API (Go) — Cloud Run 用コンテナ
+# StreetMelody API (Go) — Cloud Run 用コンテナ
 # ルートの main.go ＋ api/ サブパッケージのみをビルドする（backend/ は別モジュールなので含めない）。
 # 外部依存なし（標準ライブラリのみ）なので go.sum は不要。
 

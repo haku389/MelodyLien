@@ -1,4 +1,4 @@
--- MelodyLien PostgreSQL スキーマ
+-- StreetMelody PostgreSQL スキーマ
 
 -- ユーザー
 CREATE TABLE users (

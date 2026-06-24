@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"melodylien/api/model"
+	"streetmelody/api/model"
 )
 
 // ─── Seed data ─────────────────────────────────

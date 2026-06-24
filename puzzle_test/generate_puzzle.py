@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MelodyLien パズル生成スクリプト
+StreetMelody パズル生成スクリプト
 設計書 §14 に基づいて実装
 
 使い方:
@@ -287,7 +287,7 @@ def create_previews(owned_ids: set):
 # ── メイン ────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="MelodyLien パズル生成ツール")
+    parser = argparse.ArgumentParser(description="StreetMelody パズル生成ツール")
     parser.add_argument("--owned",
                         help="所持済みピースIDのカンマ区切りリスト (例: 1,3,5,7)",
                         default=None)

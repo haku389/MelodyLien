@@ -1,7 +1,7 @@
 /**
  * store.js の永続化テスト（npm run test:store）
  * ピース取得 → コイン・デイリーミッション・クールタイム・フレンド追加が
- * LocalStorage（melodylien.appState.v2）へ正しく保存されることを確認する。
+ * LocalStorage（streetmelody.appState.v2）へ正しく保存されることを確認する。
  */
 const memory = new Map();
 globalThis.localStorage = {
@@ -14,7 +14,7 @@ const { createStore } = await import("../apps/web/src/store.js");
 const { seedData, OSHI_LIMIT, OSHI_LIMIT_PREMIUM, COOLDOWN_MS, PIECE_EXP, levelFromExp } = await import("../apps/web/src/data.js");
 
 const store = createStore();
-const STORAGE_KEY = "melodylien.appState.v2";
+const STORAGE_KEY = "streetmelody.appState.v2";
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);

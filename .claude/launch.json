@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "MelodyLien",
+      "name": "StreetMelody",
       "runtimeExecutable": "python3",
       "runtimeArgs": ["apps/web/serve.py"],
       "port": 5174

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.melodylien.app"
+    namespace = "com.streetmelody.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.melodylien.app"
+        applicationId = "com.streetmelody.app"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -23,7 +23,7 @@ android {
         }
         release {
             isMinifyEnabled = true
-            buildConfigField("String", "API_BASE_URL", "\"https://api.melodylien.app/api\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://api.streetmelody.app/api\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"melodylien/handler"
-	"melodylien/store"
+	"streetmelody/handler"
+	"streetmelody/store"
 )
 
 func main() {
@@ -22,7 +22,7 @@ func main() {
 	mux.Handle("/api/", h)
 
 	addr := ":" + port
-	fmt.Printf("MelodyLien API listening on http://localhost%s\n", addr)
+	fmt.Printf("StreetMelody API listening on http://localhost%s\n", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

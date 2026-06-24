@@ -51,5 +51,5 @@ function dispatch(req, res) {
 
 const server = http.createServer(withCors(dispatch));
 server.listen(PORT, () => {
-  console.log(`MelodyLien API listening on http://localhost:${PORT}`);
+  console.log(`StreetMelody API listening on http://localhost:${PORT}`);
 });

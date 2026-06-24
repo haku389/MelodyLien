@@ -48,7 +48,7 @@ function unlockedTitleIds(state) {
   return seedData.titles.filter((t) => titleProgress(state, t).unlocked).map((t) => t.id);
 }
 
-const STORAGE_KEY = "melodylien.appState.v2";
+const STORAGE_KEY = "streetmelody.appState.v2";
 
 function loadState() {
   try {

@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"melodylien/api/model"
+	"streetmelody/api/model"
 )
 
 // プロトタイプ用デフォルト（anon キーは公開前提のキー）

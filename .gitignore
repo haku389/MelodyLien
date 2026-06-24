@@ -3,7 +3,7 @@
 
 # ── Xcode / XcodeGen ──
 # project.yml が真実源。.xcodeproj は `xcodegen generate` で再生成する生成物。
-apps/ios/MelodyLien.xcodeproj/
+apps/ios/StreetMelody.xcodeproj/
 **/xcuserdata/
 **/*.xcworkspace/xcuserdata/
 DerivedData/

@@ -10,7 +10,7 @@ Webプロトタイプ（`apps/web/`）をネイティブアプリへ移植する
 | 静的SPA + ES Modules | SwiftUI App ライフサイクル | Single-Activity + Compose |
 | `store.js`（reducer + subscribe） | `@Observable` クラス（または TCA の Reducer） | `ViewModel` + `StateFlow` + sealed class Action |
 | `nextState(state, action)` 純粋関数 | TCA `Reducer` / 自前 `reduce(state:action:)` | `MVI` reduce 関数（`(State, Action) -> State`） |
-| LocalStorage（`melodylien.appState.v2`） | `UserDefaults`（小規模）/ SwiftData（拡張時） | `DataStore<Preferences>`（小規模）/ Room（拡張時） |
+| LocalStorage（`streetmelody.appState.v2`） | `UserDefaults`（小規模）/ SwiftData（拡張時） | `DataStore<Preferences>`（小規模）/ Room（拡張時） |
 | `data.js` シードデータ | バンドル内 JSON + `Codable` 構造体 | assets 内 JSON + `kotlinx.serialization` |
 | `serve.py` キャッシュバスティング | 不要（ネイティブビルド） | 不要（ネイティブビルド） |
 
