@@ -795,11 +795,13 @@ final class AppViewModel: ObservableObject {
     }
 
     /// 匿名アカウントにメール＋パスワードを設定して永続化（成功時 nil、失敗時エラー文）。
+    /// 「Confirm email」ON の場合は確認メール送信となり、確認リンクのタップで連携完了。
     func linkAccount(email: String, password: String) async -> String? {
         do {
-            try await SupabaseClient.shared.upgradeToEmail(email, password)
+            let active = try await SupabaseClient.shared.upgradeToEmail(email, password)
             await refreshAccountState()
-            showToast("アカウントを連携しました（次回からメールで復元できます）")
+            showToast(active ? "アカウントを連携しました（メールで復元できます）"
+                             : "確認メールを送信しました。メール内のリンクをタップすると連携完了です")
             return nil
         } catch {
             return "連携に失敗しました。メール形式・パスワード（6文字以上）をご確認ください。"

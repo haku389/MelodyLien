@@ -75,15 +75,19 @@ actor SupabaseClient {
     }
 
     /// 現在の（匿名）ユーザーにメール＋パスワードを設定して永続アカウント化。
-    /// 確認メール設定が有効な場合は確認完了まで反映されないことがある。
-    func upgradeToEmail(_ email: String, _ password: String) async throws {
+    /// 戻り値: メールが即時有効になったか（true=「Confirm email」OFF等で即連携、false=確認メール送信・確認待ち）。
+    @discardableResult
+    func upgradeToEmail(_ email: String, _ password: String) async throws -> Bool {
         guard let token = accessToken else { throw AuthError.notSignedIn }
         let body = try JSONSerialization.data(withJSONObject: ["email": email, "password": password])
         let data = try await authRequest(method: "PUT", path: "/auth/v1/user", body: body, bearer: token)
         if let u = try? JSONDecoder().decode(AuthUser.self, from: data) {
-            self.email = u.email
-            self.isAnonymous = u.is_anonymous ?? false
+            let active = (u.email?.isEmpty == false)   // 確認待ちのときは email が空/未設定
+            self.email = active ? u.email : nil
+            self.isAnonymous = u.is_anonymous ?? self.isAnonymous
+            return active
         }
+        return false
     }
 
     func signOut() {
