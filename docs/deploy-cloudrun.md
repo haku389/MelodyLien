@@ -21,8 +21,20 @@ bash scripts/deploy-cloudrun.sh
 ```
 
 - 初回は API 有効化（run / cloudbuild / artifactregistry）に数分かかります。
+- スクリプトは Compute デフォルト SA に `roles/cloudbuild.builds.builder` を自動付与します（ソースデプロイの権限不足対策）。
 - 完了すると `https://streetmelody-api-xxxxx-an.a.run.app` のような URL が表示されます。
 - 動作確認: `curl <URL>/api/tracks` → 8 曲が `thumbnailUrl` 付きで返れば成功。
+
+### よくあるエラー
+
+- **請求先がない**（`UREQ_PROJECT_BILLING_NOT_FOUND`）→ GCP コンソール → お支払い → 請求先アカウントをプロジェクトにリンク。
+- **ビルドの権限不足**（`PERMISSION_DENIED ... NNN-compute@developer.gserviceaccount.com`）→ スクリプトの IAM 付与が未反映の可能性。**数十秒待って再実行**。手動なら:
+  ```bash
+  PN=$(gcloud projects describe streetmelody --format='value(projectNumber)')
+  gcloud projects add-iam-policy-binding streetmelody \
+    --member="serviceAccount:${PN}-compute@developer.gserviceaccount.com" \
+    --role="roles/cloudbuild.builds.builder" --condition=None
+  ```
 
 ## デプロイ後：iOS を本番 URL に向ける
 

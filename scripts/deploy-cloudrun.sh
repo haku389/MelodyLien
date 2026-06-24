@@ -35,7 +35,19 @@ echo "▶ project=$PROJECT_ID region=$REGION service=$SERVICE"
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
   --project "$PROJECT_ID"
 
+# Cloud Build（ソースデプロイ）は Compute デフォルト SA を使う。
+# 既定ではビルド/ソース読取の権限が無く PERMISSION_DENIED になるため、builder ロールを付与する。
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+echo "▶ grant roles/cloudbuild.builds.builder to ${COMPUTE_SA}"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${COMPUTE_SA}" \
+  --role="roles/cloudbuild.builds.builder" \
+  --condition=None >/dev/null
+echo "  （IAM 反映に数十秒かかることがあります。失敗したら少し待って再実行してください）"
+
 # デプロイ（ソースから。Cloud Build が Dockerfile をビルド）
+# --quiet で Artifact Registry リポジトリ作成の確認プロンプトを自動承認
 gcloud run deploy "$SERVICE" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
@@ -43,7 +55,8 @@ gcloud run deploy "$SERVICE" \
   --allow-unauthenticated \
   --port 8080 \
   --cpu 1 --memory 256Mi --min-instances 0 --max-instances 2 \
-  --set-env-vars "SUPABASE_URL=${SUPABASE_URL},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}"
+  --set-env-vars "SUPABASE_URL=${SUPABASE_URL},SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}" \
+  --quiet
 
 echo ""
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
