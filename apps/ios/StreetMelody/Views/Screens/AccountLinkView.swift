@@ -124,12 +124,15 @@ struct AccountLinkView: View {
                 if let err { error = err } else { dismiss() }
             }
         } label: {
-            Text(title)
-                .font(.system(size: 14, weight: .black))
-                .foregroundStyle(Color(hex: fg))
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(Color(hex: bg), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: border)))
+            HStack(spacing: 8) {
+                if busy { ProgressView().tint(Color(hex: fg)) }
+                Text(busy ? "接続中…" : title)
+                    .font(.system(size: 14, weight: .black))
+                    .foregroundStyle(Color(hex: fg))
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(Color(hex: bg), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: border)))
         }
         .disabled(busy)
     }

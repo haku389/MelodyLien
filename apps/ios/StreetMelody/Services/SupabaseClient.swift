@@ -29,20 +29,21 @@ actor SupabaseClient {
 
     init() {
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 15
-        cfg.waitsForConnectivity = true
+        cfg.timeoutIntervalForRequest = 8     // 1リクエストの上限（体感速度優先）
+        cfg.timeoutIntervalForResource = 15   // 全体上限（暴走待ち防止）
+        cfg.waitsForConnectivity = false      // 不通時は即失敗（UIを待たせない）
         session = URLSession(configuration: cfg)
     }
 
     /// シミュレータ等で間欠的に出る HTTP/3(QUIC) の -1005「接続喪失」を吸収するため、
-    /// 接続喪失/タイムアウト時は短い待機を入れて数回リトライする。
-    private func dataWithRetry(_ req: URLRequest, attempts: Int = 4) async throws -> (Data, URLResponse) {
+    /// 接続喪失時のみ短く2回だけリトライする（待ち時間を抑える）。
+    private func dataWithRetry(_ req: URLRequest, attempts: Int = 3) async throws -> (Data, URLResponse) {
         var lastError: Error = URLError(.unknown)
-        for i in 0..<attempts {
+        for _ in 0..<attempts {
             do { return try await session.data(for: req) }
-            catch let e as URLError where e.code == .networkConnectionLost || e.code == .timedOut || e.code == .cannotConnectToHost {
+            catch let e as URLError where e.code == .networkConnectionLost {
                 lastError = e
-                try? await Task.sleep(nanoseconds: UInt64(200_000_000 * (i + 1)))   // 0.2s,0.4s,0.6s...
+                try? await Task.sleep(nanoseconds: 150_000_000)   // 0.15s 固定
             }
         }
         throw lastError

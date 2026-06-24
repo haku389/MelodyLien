@@ -556,8 +556,9 @@ final class AppViewModel: ObservableObject {
             tracks[trackId] = track
             showToast(prefix + "YouTube確認で曲名を解放できます")
         }
-        // 方式A: ヒント状態を Supabase に保存
-        await SupabaseClient.shared.upsertHint(trackId: trackId, level: track.hintLevel, answerReady: track.answerReady)
+        // 方式A: ヒント状態を Supabase に保存（バックグラウンド・UI を待たせない）
+        let lvl = track.hintLevel, ready = track.answerReady
+        Task { await SupabaseClient.shared.upsertHint(trackId: trackId, level: lvl, answerReady: ready) }
     }
 
     func unlockTrack(trackId: String) async {
@@ -566,11 +567,9 @@ final class AppViewModel: ObservableObject {
             if !unlockedTrackIds.contains(trackId) { unlockedTrackIds.append(trackId) }
             tracks[trackId] = track
         }
-        // 方式A: 解放を Supabase に保存（サインイン時のみ）
-        await SupabaseClient.shared.upsertUnlock(trackId: trackId)
-        do {
-            try await repository.unlockTrack(trackId: trackId)
-        } catch {}
+        // 同期はバックグラウンド（UI を待たせない）
+        Task { await SupabaseClient.shared.upsertUnlock(trackId: trackId) }
+        Task { try? await repository.unlockTrack(trackId: trackId) }
         showToast("曲が解放されました！")
         goBack()
         navigate(to: .puzzle(trackId: trackId))
