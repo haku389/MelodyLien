@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MyPageView: View {
     @EnvironmentObject var vm: AppViewModel
+    @State private var showAccountSheet = false
 
     var body: some View {
         ScrollView {
@@ -64,17 +65,28 @@ struct MyPageView: View {
                 Circle()
                     .fill(Color(hex: "7248E0"))
                     .frame(width: 40, height: 40)
-                    .overlay(Text("🎵").font(.system(size: 16)))
+                    .overlay(Text(vm.isGuestAccount ? "👤" : "🎵").font(.system(size: 16)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ゲストアカウント").font(.system(size: 13, weight: .black)).foregroundStyle(.primary)
-                    Text("メール · 機能制限あり").font(.system(size: 10, weight: .heavy)).foregroundStyle(Color(hex: "7B6F8A"))
+                    Text(vm.isGuestAccount ? "ゲストアカウント" : "連携済み")
+                        .font(.system(size: 13, weight: .black)).foregroundStyle(.primary)
+                    Text(vm.isGuestAccount ? "この端末のみ · 連携で機種変更に対応"
+                                           : (vm.accountEmail ?? "メール連携済み"))
+                        .font(.system(size: 10, weight: .heavy)).foregroundStyle(Color(hex: "7B6F8A"))
                 }
             }
-            Button("ログアウト") {}
-                .buttonLabel(.secondary)
+            if vm.isGuestAccount {
+                Button { showAccountSheet = true } label: {
+                    Text("アカウントを連携 / ログイン").buttonLabel(.primary)
+                }
+            } else {
+                Button { Task { await vm.signOutAccount() } } label: {
+                    Text("ログアウト").buttonLabel(.secondary)
+                }
+            }
         }
         .padding(16).mlCard()
         .padding(.bottom, 14)
+        .sheet(isPresented: $showAccountSheet) { AccountLinkView().environmentObject(vm) }
     }
 
     // MARK: - Friends section

@@ -131,6 +131,10 @@ final class AppViewModel: ObservableObject {
     @Published var previewPlays: [String: PreviewRecord] = [:]
     @Published var previewTrackId: String? = nil
 
+    // MARK: Published - account（方式A: アカウント連携）
+    @Published var accountEmail: String? = nil
+    @Published var isGuestAccount: Bool = true
+
     // MARK: Dependencies
 
     let bleManager: BLEManager
@@ -156,6 +160,7 @@ final class AppViewModel: ObservableObject {
     private static let saveKey = "streetmelody.save.v1"
     private var isLoaded = false
     private var saveCancellable: AnyCancellable?
+    private var lastSyncedCoins: Int? = nil   // 方式A: コインの Supabase 同期の重複防止
 
     private func persistIfLoaded() {
         guard isLoaded else { return }
@@ -179,6 +184,11 @@ final class AppViewModel: ObservableObject {
         s.previewPlays = previewPlays
         if let data = try? JSONEncoder().encode(s) {
             UserDefaults.standard.set(data, forKey: Self.saveKey)
+        }
+        // 方式A: コインが変わっていれば Supabase の profiles に反映（デバウンス済み）
+        if coins != lastSyncedCoins {
+            lastSyncedCoins = coins
+            Task { await SupabaseClient.shared.updateCoins(coins) }
         }
     }
 
@@ -238,6 +248,7 @@ final class AppViewModel: ObservableObject {
         restoreState()
         // 方式A: Supabase の自分の進行（所持ピース・解放）を seed/ローカルにマージ
         await mergeRemoteProgress()
+        await refreshAccountState()
     }
 
     private func loadUser() async {
@@ -279,21 +290,39 @@ final class AppViewModel: ObservableObject {
         if let p = try? await repository.fetchDailyPlaylist() { dailyPlaylist = p }
     }
 
-    /// 方式A: Supabase に保存された自分の進行を seed/ローカル状態にマージする。
-    /// 所持ピースは和集合、解放はONを反映（remote が真とみなす）。未サインイン時は空で no-op。
+    /// 方式A: Supabase に保存された自分の状態を seed/ローカルにマージする。
+    /// ピースは和集合、解放/ヒントはONを反映、コインは remote 採用（初回は seed を push）、フレンドは未所持を追加。
+    /// 未サインイン時は空で no-op。
     private func mergeRemoteProgress() async {
-        let prog = await SupabaseClient.shared.fetchProgress()
-        guard !prog.pieces.isEmpty || !prog.unlocked.isEmpty else { return }
-        for (trackId, pieces) in prog.pieces {
+        let state = await SupabaseClient.shared.fetchUserState()
+
+        for (trackId, pieces) in state.pieces {
             guard var t = tracks[trackId] else { continue }
             t.ownedPieces = Array(Set(t.ownedPieces).union(pieces)).sorted()
             tracks[trackId] = t
         }
-        for trackId in prog.unlocked {
+        for trackId in state.unlocked {
             guard var t = tracks[trackId] else { continue }
             t.isUnlocked = true
             if !unlockedTrackIds.contains(trackId) { unlockedTrackIds.append(trackId) }
             tracks[trackId] = t
+        }
+        for (trackId, h) in state.hints {
+            guard var t = tracks[trackId] else { continue }
+            t.hintLevel = max(t.hintLevel, h.level)
+            if h.answerReady { t.answerReady = true }
+            tracks[trackId] = t
+        }
+        // コイン: remote に実値(>0)があれば採用、無ければ（新規=既定0）seed を remote へ push
+        if let rc = state.coins {
+            if rc > 0 { coins = rc }
+            else if coins > 0 { await SupabaseClient.shared.updateCoins(coins) }
+        }
+        lastSyncedCoins = coins
+        // フレンド: remote にあって手元に無い名前を追加（場所・回数も反映）
+        for rf in state.friends where !friends.contains(where: { $0.userName == rf.name }) {
+            friends.append(Friend(userId: "remote_\(rf.name)", userName: rf.name,
+                                  locationLabel: rf.location, exchangeCount: rf.exchangeCount, addedAt: Date()))
         }
     }
 
@@ -355,6 +384,8 @@ final class AppViewModel: ObservableObject {
             if let i = friends.firstIndex(where: { $0.userId == enc.fromUserId }) {
                 // 既存フレンドは交換回数を加算
                 friends[i].exchangeCount += 1
+                let f = friends[i]
+                Task { await SupabaseClient.shared.upsertFriend(name: f.userName, location: f.locationLabel, exchangeCount: f.exchangeCount) }
                 pendingFriendAdd = nil
             } else {
                 pendingFriendAdd = PendingFriend(userId: enc.fromUserId,
@@ -525,6 +556,8 @@ final class AppViewModel: ObservableObject {
             tracks[trackId] = track
             showToast(prefix + "YouTube確認で曲名を解放できます")
         }
+        // 方式A: ヒント状態を Supabase に保存
+        await SupabaseClient.shared.upsertHint(trackId: trackId, level: track.hintLevel, answerReady: track.answerReady)
     }
 
     func unlockTrack(trackId: String) async {
@@ -753,11 +786,53 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Account（方式A: アカウント連携）
+
+    /// 現在の認証状態（ゲスト/連携メール）を Published に反映。
+    func refreshAccountState() async {
+        accountEmail = await SupabaseClient.shared.email
+        isGuestAccount = await SupabaseClient.shared.isAnonymous
+    }
+
+    /// 匿名アカウントにメール＋パスワードを設定して永続化（成功時 nil、失敗時エラー文）。
+    func linkAccount(email: String, password: String) async -> String? {
+        do {
+            try await SupabaseClient.shared.upgradeToEmail(email, password)
+            await refreshAccountState()
+            showToast("アカウントを連携しました（次回からメールで復元できます）")
+            return nil
+        } catch {
+            return "連携に失敗しました。メール形式・パスワード（6文字以上）をご確認ください。"
+        }
+    }
+
+    /// 既存メールアカウントでログインし、進行を復元（成功時 nil、失敗時エラー文）。
+    func signInAccount(email: String, password: String) async -> String? {
+        do {
+            _ = try await SupabaseClient.shared.signInWithEmail(email, password)
+            await refreshAccountState()
+            await mergeRemoteProgress()
+            showToast("ログインしました。進行を復元しました")
+            return nil
+        } catch {
+            return "ログインに失敗しました。メール・パスワードをご確認ください。"
+        }
+    }
+
+    /// ログアウト（以後は匿名相当。ローカル進行は保持）。
+    func signOutAccount() async {
+        await SupabaseClient.shared.signOut()
+        await refreshAccountState()
+        showToast("ログアウトしました")
+    }
+
     func addFriend(userId: String, userName: String, locationLabel: String) {
         if !friends.contains(where: { $0.userId == userId }) {
             friends.append(Friend(userId: userId, userName: userName,
                                   locationLabel: locationLabel, exchangeCount: 1, addedAt: Date()))
             checkTitleUnlocks()
+            // 方式A: フレンドを Supabase に保存
+            Task { await SupabaseClient.shared.upsertFriend(name: userName, location: locationLabel, exchangeCount: 1) }
         }
     }
 
