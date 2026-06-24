@@ -842,9 +842,8 @@ final class AppViewModel: ObservableObject {
             showToast(link ? "\(name) と連携しました（進行はそのまま）" : "\(name) でログインしました")
             return nil
         } catch {
-            return link
-                ? "\(name) 連携に失敗しました。Supabase で「Manual linking」が有効か、または既に別アカウントで使用中でないかご確認ください。"
-                : "\(name) ログインに失敗しました（キャンセル/設定未完了の可能性）。"
+            if let m = (error as? SupabaseClient.OAuthError)?.errorDescription { return "\(name): \(m)" }
+            return "\(name) \(link ? "連携" : "ログイン")に失敗しました（\(error.localizedDescription)）"
         }
     }
 

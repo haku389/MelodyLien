@@ -136,15 +136,37 @@ actor SupabaseClient {
         return u
     }
 
+    enum OAuthError: LocalizedError {
+        case message(String)
+        var errorDescription: String? { if case let .message(m) = self { return m }; return nil }
+    }
+
     /// コールバックURLの code を PKCE 交換してセッション確立。
     func oauthExchange(callback: URL) async throws {
-        guard let verifier = pendingVerifier else { throw AuthError.notSignedIn }
+        guard let verifier = pendingVerifier else { throw OAuthError.message("内部エラー: verifier 不在") }
+        // code は query または fragment(#) のどちらにも来うる
         let comps = URLComponents(url: callback, resolvingAgainstBaseURL: false)
-        guard let code = comps?.queryItems?.first(where: { $0.name == "code" })?.value else {
-            throw AuthError.http(-2)   // error/ユーザーキャンセル等
+        var items = comps?.queryItems ?? []
+        if let frag = comps?.fragment, let fc = URLComponents(string: "?" + frag)?.queryItems { items += fc }
+        if let errDesc = items.first(where: { $0.name == "error_description" })?.value
+            ?? items.first(where: { $0.name == "error" })?.value {
+            throw OAuthError.message("プロバイダ側エラー: \(errDesc)")
         }
-        let body = try JSONSerialization.data(withJSONObject: ["auth_code": code, "code_verifier": verifier])
-        let data = try await authRequest(method: "POST", path: "/auth/v1/token?grant_type=pkce", body: body)
+        guard let code = items.first(where: { $0.name == "code" })?.value else {
+            throw OAuthError.message("コールバックに code がありません: \(callback.absoluteString.prefix(80))")
+        }
+        // 直接 POST して、失敗時はサーバ本文を表示
+        guard let url = URL(string: baseURL + "/auth/v1/token?grant_type=pkce") else { throw OAuthError.message("URL不正") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(anonKey, forHTTPHeaderField: "apikey")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["auth_code": code, "code_verifier": verifier])
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? ""
+            throw OAuthError.message("交換失敗(HTTP \(http.statusCode)): \(body.prefix(160))")
+        }
         _ = try apply(data)
         pendingVerifier = nil
     }
