@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // MARK: - SupabaseClient
 //
@@ -93,6 +94,84 @@ actor SupabaseClient {
     func signOut() {
         accessToken = nil; refreshToken = nil; userId = nil; email = nil; isAnonymous = true
         UserDefaults.standard.removeObject(forKey: sessionKey)
+    }
+
+    // MARK: OAuth（PKCE・REST 直叩き。SDK のネットワークを使わずシミュレータでも動く）
+
+    private var pendingVerifier: String?
+    private let oauthRedirect = "com.streetmelody.app://login-callback"
+
+    /// プロバイダの認可URLを返す。link=true は今の（匿名）セッションに紐付け（昇格）、false は新規サインイン。
+    func oauthAuthorizeURL(provider: String, link: Bool) async throws -> URL {
+        let verifier = Self.pkceVerifier()
+        pendingVerifier = verifier
+        let challenge = Self.pkceChallenge(verifier)
+        let items = [
+            URLQueryItem(name: "provider", value: provider),
+            URLQueryItem(name: "redirect_to", value: oauthRedirect),
+            URLQueryItem(name: "code_challenge", value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "s256"),
+        ]
+        if !link {
+            // 新規サインイン: /authorize を直接ブラウザで開く（302 連鎖でプロバイダ→コールバック）
+            var comps = URLComponents(string: baseURL + "/auth/v1/authorize")!
+            comps.queryItems = items
+            guard let u = comps.url else { throw AuthError.notSignedIn }
+            return u
+        }
+        // 昇格: 認可URL取得には Bearer が要る（ブラウザはヘッダ送れない）→ アプリ側で取得して URL を得る
+        guard let token = accessToken else { throw AuthError.notSignedIn }
+        var comps = URLComponents(string: baseURL + "/auth/v1/user/identities/authorize")!
+        comps.queryItems = items + [URLQueryItem(name: "skip_http_redirect", value: "true")]
+        guard let url = comps.url else { throw AuthError.notSignedIn }
+        var req = URLRequest(url: url)
+        req.setValue(anonKey, forHTTPHeaderField: "apikey")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw AuthError.http(http.statusCode) }
+        struct LinkURL: Decodable { let url: String }
+        guard let lu = try? JSONDecoder().decode(LinkURL.self, from: data), let u = URL(string: lu.url) else {
+            throw AuthError.http(-1)
+        }
+        return u
+    }
+
+    /// コールバックURLの code を PKCE 交換してセッション確立。
+    func oauthExchange(callback: URL) async throws {
+        guard let verifier = pendingVerifier else { throw AuthError.notSignedIn }
+        let comps = URLComponents(url: callback, resolvingAgainstBaseURL: false)
+        guard let code = comps?.queryItems?.first(where: { $0.name == "code" })?.value else {
+            throw AuthError.http(-2)   // error/ユーザーキャンセル等
+        }
+        let body = try JSONSerialization.data(withJSONObject: ["auth_code": code, "code_verifier": verifier])
+        let data = try await authRequest(method: "POST", path: "/auth/v1/token?grant_type=pkce", body: body)
+        _ = try apply(data)
+        pendingVerifier = nil
+    }
+
+    /// Apple の id_token を REST で交換（link=true で昇格）。
+    func signInWithAppleIDToken(_ idToken: String, nonce: String, link: Bool) async throws {
+        var obj: [String: Any] = ["provider": "apple", "id_token": idToken, "nonce": nonce]
+        if link { obj["link_identity"] = true }
+        let body = try JSONSerialization.data(withJSONObject: obj)
+        var bearer: String? = nil
+        if link { bearer = accessToken }
+        let data = try await authRequest(method: "POST", path: "/auth/v1/token?grant_type=id_token", body: body, bearer: bearer)
+        _ = try apply(data)
+    }
+
+    private static func pkceVerifier(_ n: Int = 64) -> String {
+        let cs = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        var s = ""
+        for _ in 0..<n { var b: UInt8 = 0; _ = SecRandomCopyBytes(kSecRandomDefault, 1, &b); s.append(cs[Int(b) % cs.count]) }
+        return s
+    }
+    private static func pkceChallenge(_ verifier: String) -> String {
+        let h = SHA256.hash(data: Data(verifier.utf8))
+        return Data(h).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     /// 外部（Supabase SDK 等）で確立したセッションを取り込み、データ層を共有する。

@@ -76,10 +76,10 @@ struct AccountLinkView: View {
                     .frame(height: 46)
 
                     providerButton(title: "Google で続ける", bg: "FFFFFF", fg: "1c1c22", border: "E0D8F7") {
-                        await vm.signInWithGoogle()
+                        await vm.signInWithGoogle(link: mode == .link)
                     }
                     providerButton(title: "Spotify で続ける", bg: "1DB954", fg: "FFFFFF", border: "1DB954") {
-                        await vm.signInWithSpotify()
+                        await vm.signInWithSpotify(link: mode == .link)
                     }
 
                     Spacer(minLength: 8)
@@ -145,8 +145,9 @@ struct AccountLinkView: View {
                 return
             }
             error = nil
+            let link = mode == .link
             Task {
-                if let err = await vm.signInWithApple(idToken: idToken, nonce: nonce) {
+                if let err = await vm.signInWithApple(idToken: idToken, nonce: nonce, link: link) {
                     error = err
                 } else {
                     dismiss()

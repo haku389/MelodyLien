@@ -1,9 +1,8 @@
 import Foundation
-import Supabase
 import AuthenticationServices
 import UIKit
 
-// MARK: - Web 認証の表示アンカー（ASWebAuthenticationSession 用）
+// MARK: - Web 認証の表示アンカー
 
 final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
     static let shared = WebAuthPresenter()
@@ -15,54 +14,42 @@ final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextPr
 
 // MARK: - SupabaseAuthKit
 //
-// OAuth/OIDC プロバイダ（Apple など）用の Supabase Swift SDK ラッパー。
-// SDK で認証し、確立したセッションを REST 版 `SupabaseClient`（per-user データ層）へ橋渡しする。
-// これにより「認証は SDK / データ読み書きは実証済みの REST 経路」を両立する。
-//
-// 将来 Google / Spotify / LINE を足すときは、ここに linkIdentity / signInWithOAuth を追加する。
+// OAuth（Google/Spotify）と Apple のサインイン/昇格を担う。
+// 認証は REST 直叩き（`SupabaseClient`）＋ `ASWebAuthenticationSession`（PKCE）で行い、
+// Supabase Swift SDK のネットワークは使わない。
+// 理由: SDK の URLSession 経路はシミュレータ/一部環境で HTTP/3(QUIC) の -1005 を出すため、
+// 実証済みの REST 経路に統一する（本番でも確実）。
+// link=true は今の（匿名）セッションにプロバイダを紐付け＝進行データを保持したまま昇格。
 
 enum SupabaseAuthKit {
 
-    /// SDK クライアント（型名衝突を避けるため `Supabase.SupabaseClient` を明示）。
-    static let client = Supabase.SupabaseClient(
-        supabaseURL: URL(string: "https://wngtvdgzzlkajtbwsurc.supabase.co")!,
-        supabaseKey: "sb_publishable_oR41TcNHu-G9La0JHrnmWg_P8SfRts5"
-    )
-
-    /// Sign in with Apple の id_token + nonce で Supabase にサインインし、
-    /// 取得したセッションを REST クライアントへ橋渡しする。
-    static func signInWithApple(idToken: String, nonce: String) async throws {
-        let session = try await client.auth.signInWithIdToken(
-            credentials: .init(provider: .apple, idToken: idToken, nonce: nonce)
-        )
-        await bridge(session)
+    static func signInWithApple(idToken: String, nonce: String, link: Bool) async throws {
+        try await SupabaseClient.shared.signInWithAppleIDToken(idToken, nonce: nonce, link: link)
     }
 
-    /// リダイレクト URL（Supabase ダッシュボードの Redirect URLs と一致させる）。
-    static let redirectURL = URL(string: "com.streetmelody.app://login-callback")!
+    static func signInWithGoogle(link: Bool) async throws { try await oauth("google", link: link) }
+    static func signInWithSpotify(link: Bool) async throws { try await oauth("spotify", link: link) }
 
-    static func signInWithGoogle() async throws { try await signInWithOAuth(.google) }
-    static func signInWithSpotify() async throws { try await signInWithOAuth(.spotify) }
+    @MainActor
+    private static func oauth(_ provider: String, link: Bool) async throws {
+        let url = try await SupabaseClient.shared.oauthAuthorizeURL(provider: provider, link: link)
+        let callback = try await presentWebAuth(url)
+        try await SupabaseClient.shared.oauthExchange(callback: callback)
+    }
 
-    /// OAuth（Web リダイレクト）でサインインし、セッションを REST 層へ橋渡し。
-    private static func signInWithOAuth(_ provider: Provider) async throws {
-        let session = try await client.auth.signInWithOAuth(
-            provider: provider,
-            redirectTo: redirectURL
-        ) { webAuth in
-            webAuth.presentationContextProvider = WebAuthPresenter.shared
-            webAuth.prefersEphemeralWebBrowserSession = false
+    @MainActor
+    private static func presentWebAuth(_ url: URL) async throws -> URL {
+        let presenter = WebAuthPresenter.shared
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
+            var authSession: ASWebAuthenticationSession?
+            authSession = ASWebAuthenticationSession(url: url, callbackURLScheme: "com.streetmelody.app") { callback, error in
+                if let callback { cont.resume(returning: callback) }
+                else { cont.resume(throwing: error ?? CancellationError()) }
+                _ = authSession
+            }
+            authSession?.presentationContextProvider = presenter
+            authSession?.prefersEphemeralWebBrowserSession = false
+            authSession?.start()
         }
-        await bridge(session)
-    }
-
-    private static func bridge(_ session: Session) async {
-        await SupabaseClient.shared.adoptSession(
-            accessToken: session.accessToken,
-            refreshToken: session.refreshToken,
-            userId: session.user.id.uuidString.lowercased(),
-            email: session.user.email,
-            isAnonymous: session.user.isAnonymous
-        )
     }
 }

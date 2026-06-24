@@ -821,32 +821,30 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    /// Sign in with Apple（id_token）で Supabase にサインインし、進行を復元。
-    func signInWithApple(idToken: String, nonce: String) async -> String? {
-        do {
-            try await SupabaseAuthKit.signInWithApple(idToken: idToken, nonce: nonce)
-            await refreshAccountState()
-            await mergeRemoteProgress()
-            showToast("Apple でサインインしました")
-            return nil
-        } catch {
-            return "Apple サインインに失敗しました。時間をおいて再度お試しください。"
-        }
+    /// Apple（id_token）。link=true は今のゲスト進行を保ったまま昇格。
+    func signInWithApple(idToken: String, nonce: String, link: Bool) async -> String? {
+        await providerAuth("Apple", link: link) { try await SupabaseAuthKit.signInWithApple(idToken: idToken, nonce: nonce, link: link) }
     }
 
-    /// OAuth（Google / Spotify）でサインインし、進行を復元。
-    func signInWithGoogle() async -> String? { await oauthSignIn(name: "Google") { try await SupabaseAuthKit.signInWithGoogle() } }
-    func signInWithSpotify() async -> String? { await oauthSignIn(name: "Spotify") { try await SupabaseAuthKit.signInWithSpotify() } }
+    /// OAuth（Google / Spotify）。link=true は昇格（進行保持）、false は新規/復元サインイン。
+    func signInWithGoogle(link: Bool) async -> String? {
+        await providerAuth("Google", link: link) { try await SupabaseAuthKit.signInWithGoogle(link: link) }
+    }
+    func signInWithSpotify(link: Bool) async -> String? {
+        await providerAuth("Spotify", link: link) { try await SupabaseAuthKit.signInWithSpotify(link: link) }
+    }
 
-    private func oauthSignIn(name: String, _ action: () async throws -> Void) async -> String? {
+    private func providerAuth(_ name: String, link: Bool, _ action: () async throws -> Void) async -> String? {
         do {
             try await action()
             await refreshAccountState()
             await mergeRemoteProgress()
-            showToast("\(name) でサインインしました")
+            showToast(link ? "\(name) と連携しました（進行はそのまま）" : "\(name) でログインしました")
             return nil
         } catch {
-            return "\(name) サインインに失敗しました（キャンセル/設定未完了の可能性）"
+            return link
+                ? "\(name) 連携に失敗しました。Supabase で「Manual linking」が有効か、または既に別アカウントで使用中でないかご確認ください。"
+                : "\(name) ログインに失敗しました（キャンセル/設定未完了の可能性）。"
         }
     }
 
